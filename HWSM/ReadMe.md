@@ -1,6 +1,7 @@
 **HWSM**
 <br>
 **This is the main directory containing the program with all it's dependencies.**
+<p>&nbsp;</p>
 
 *NOTE*
 <br>
@@ -10,11 +11,11 @@ Required dependencies:
   - Python: Any version
   - tk: 8.6.16 or newer
   - tcl: 8.6.16 or newer
-    <br>
+    </p>
     
   Python libraries:
-    - psutil
-    - matplotlib
-    
+  - psutil
+  - matplotlib
+  
     
     
