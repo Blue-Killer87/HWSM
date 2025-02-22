@@ -10,6 +10,7 @@ Required dependencies:
   - Python: Any version
   - tk: 8.6.16 or newer
   - tcl: 8.6.16 or newer
+    <br>
     
   Python libraries:
     - psutil
