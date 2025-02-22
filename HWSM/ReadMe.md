@@ -1,5 +1,5 @@
 **HWSM**
-This is the main directory containing the program with all it's dependencies.
+**This is the main directory containing the program with all it's dependencies.**
 
 *NOTE*
 For this to work, you'll need few python libraries first. I'll work on a way to make it work without it later, but for now you'll need to manually add them via your pip or external package managment system.
