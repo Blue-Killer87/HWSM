@@ -12,7 +12,8 @@ Required dependencies:
   - tcl: 8.6.16 or newer
     
   Python libraries:
-    - matplotlib
     - psutil
+    - matplotlib
+    
     
     
