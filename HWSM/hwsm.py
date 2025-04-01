@@ -5,26 +5,25 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from matplotlib.widgets import Button
 
-# Default Theme: Dark Mode
+# Default Theme
 current_theme = "dark"
 
+# Daemon to measure ram
 def monitor_ram(ram_list, time_list):
-    """Background process to check RAM usage every 2 seconds and store it."""
     while True:
         ram_usage = psutil.virtual_memory().used / (1024 ** 3)  # Convert to GB
         ram_list.append(ram_usage)
         time_list.append(len(time_list))  # Use time index
         time.sleep(2)
 
+# Daemon to measure cpu
 def monitor_cpu(cpu_list, time_list):
-    """Background process to check CPU usage every 2 seconds and store it."""
     while True:
         cpu_usage = psutil.cpu_percent(interval=1)  # Get CPU usage in %
         cpu_list.append(cpu_usage)
         time.sleep(2)
 
 def update_chart(frame, time_list, ram_list, cpu_list, ram_line, cpu_line, ram_text, cpu_text):
-    """Function to update the live chart."""
     if not ram_list or not cpu_list:
         return ram_line, cpu_line, ram_text, cpu_text
 
@@ -51,14 +50,12 @@ def update_chart(frame, time_list, ram_list, cpu_list, ram_line, cpu_line, ram_t
     return ram_line, cpu_line, ram_text, cpu_text
 
 def on_hover(event):
-    """Show x, y coordinates on hover."""
     if event.inaxes:
         x, y = event.xdata, event.ydata
         if x is not None and y is not None:
             coord_display.set_text(f"Time: {int(x)}, Usage: {y:.2f}")
 
 def toggle_theme(event):
-    """Toggle between dark and light mode."""
     global current_theme
 
     if current_theme == "dark":
