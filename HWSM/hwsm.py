@@ -10,8 +10,6 @@ current_theme = "dark"
 plt.rcParams['toolbar'] = 'None'
 i = 6
 # Parameters
-x_len = 200         # Number of points to display
-y_range = [0, 10]  # Range of possible Y values to display
 ram_total = psutil.virtual_memory().total / (1024**3)
 
 # Daemon to measure ram
@@ -29,9 +27,9 @@ def monitor_cpu(cpu_list, time_list):
         cpu_list.append(cpu_usage)
         time.sleep(0.1)
 
-def update_chart(frame, time_list, ram_list, cpu_list, ram_line, cpu_line, ram_text, cpu_text, ax1, ax2):
+def update_chart(frame, time_list, ram_list, cpu_list, ram_line, cpu_line, total_cpu_line, ram_text, cpu_text, ax1, ax2, ax3):
     if not ram_list or not cpu_list:
-        return ram_line, cpu_line, ram_text, cpu_text
+        return ram_line, cpu_line, total_cpu_line, ram_text, cpu_text
     min_len = min(len(time_list), len(ram_list), len(cpu_list))
 
     time_values = time_list[:min_len]
@@ -41,10 +39,12 @@ def update_chart(frame, time_list, ram_list, cpu_list, ram_line, cpu_line, ram_t
     # Update data
     ram_line.set_data(time_values, ram_values)
     cpu_line.set_data(time_values, cpu_values)
+    total_cpu_line.set_data(time_values, cpu_values)
 
     # Update latest text
     ram_text.set_text(f"Latest RAM Usage: {ram_values[-1]:.2f} GB")
     cpu_text.set_text(f"Latest CPU Usage: {cpu_values[-1]:.2f}%")
+ 
 
     i = time_values[-1]
     if i < 100: 
@@ -54,7 +54,7 @@ def update_chart(frame, time_list, ram_list, cpu_list, ram_line, cpu_line, ram_t
         ax1.set_xlim(i-100, i)
         ax2.set_xlim(i-100, i)
     
-    return ram_line, cpu_line, ram_text, cpu_text, ax1, ax2
+    return ram_line, cpu_line, total_cpu_line, ram_text, cpu_text, ax1, ax2, ax3
 
 
 def on_hover(event):
@@ -111,10 +111,11 @@ if __name__ == "__main__":
     
     # Setup Matplotlib with dark mode as default
     plt.style.use("dark_background")
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(9, 6))
+    fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(9, 6))
     fig.patch.set_facecolor("#121212")
     ax1.set_facecolor("#1e1e1e")
     ax2.set_facecolor("#1e1e1e")
+    ax3.set_facecolor("#1e1e1e")
 
     # RAM Graph
     ram_line, = ax1.plot([], [], "r-", label="RAM Usage (GB)", linewidth=2)
@@ -124,6 +125,7 @@ if __name__ == "__main__":
     ax1.grid(color="gray", linestyle="--", linewidth=0.5)
     ram_text = ax1.text(0.02, 0.9, "", transform=ax1.transAxes, fontsize=12, color="red")
     ax1.set_ylim([0,ram_total+2])
+    
     # CPU Graph
     cpu_line, = ax2.plot([], [], "cyan", label="CPU Usage (%)", linewidth=2)
     ax2.set_ylabel("Usage (%)", color="white")
@@ -134,6 +136,16 @@ if __name__ == "__main__":
     cpu_text = ax2.text(0.02, 0.9, "", transform=ax2.transAxes, fontsize=12, color="cyan")
     ax2.set_ylim([0,100])
 
+    # CPU Graph - Total
+    total_cpu_line, = ax3.plot([], [], "cyan", linewidth=2)
+    ax3.set_ylabel("Usage (%)", color="white")
+    ax3.set_xlabel("Time (Updates)", color="white")
+    ax3.legend()
+    ax3.set_xticklabels([])
+    ax3.grid(color="gray", linestyle="--", linewidth=0.5)
+    cpu_text = ax3.text(0.02, 0.9, "", transform=ax3.transAxes, fontsize=12, color="cyan")
+    ax3.set_ylim([0,100])
+    
     plt.subplots_adjust(hspace=0.4)
 
     # Display coordinates in bottom left
@@ -147,7 +159,7 @@ if __name__ == "__main__":
     # Enable coordinate display on hover
     fig.canvas.mpl_connect("motion_notify_event", on_hover)
 
-    ani = animation.FuncAnimation(fig, update_chart, fargs=(time_list, ram_list, cpu_list, ram_line, cpu_line, ram_text, cpu_text, ax1, ax2), interval=100)
+    ani = animation.FuncAnimation(fig, update_chart, fargs=(time_list, ram_list, cpu_list, ram_line, cpu_line, total_cpu_line, ram_text, cpu_text, ax1, ax2, ax3), interval=100)
     
     # Hide system control bar
     try:
