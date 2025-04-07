@@ -74,7 +74,12 @@ def toggle_theme(event):
         ram_text.set_color("black")
         cpu_text.set_color("black")
         theme_button.label.set_text("Dark Mode")
+        theme_button.label.set_color("black")
+        theme_button.hovercolor="whitesmoke"
         current_theme = "light"
+        ax2.set_ylabel("Usage (%)", color="black")
+        ax2.set_xlabel("Time (Updates)", color="black")
+        coord_display = fig.text(0.02, 0.02, "", fontsize=12, color="black")
     else:
         plt.style.use("dark_background")
         fig.patch.set_facecolor("#121212")
@@ -83,8 +88,13 @@ def toggle_theme(event):
         ram_text.set_color("red")
         cpu_text.set_color("cyan")
         theme_button.label.set_text("Light Mode")
+        theme_button.label.set_color("white")
+        theme_button.hovercolor="black"
         current_theme = "dark"
-
+        ax2.set_ylabel("Usage (%)", color="white")
+        ax2.set_xlabel("Time (Updates)", color="white")
+        coord_display = fig.text(0.02, 0.02, "", fontsize=12, color="white")
+        
     fig.canvas.draw_idle()
 
 if __name__ == "__main__":
@@ -108,17 +118,14 @@ if __name__ == "__main__":
 
     # RAM Graph
     ram_line, = ax1.plot([], [], "r-", label="RAM Usage (GB)", linewidth=2)
-    ax1.set_title("RAM Usage Over Time", color="white")
     ax1.set_ylabel("Usage (GB)", color="white")
     ax1.legend()
     ax1.set_xticklabels([])
     ax1.grid(color="gray", linestyle="--", linewidth=0.5)
     ram_text = ax1.text(0.02, 0.9, "", transform=ax1.transAxes, fontsize=12, color="red")
-    ax2.set_xlim(i-5, i+0.1)
-    ax1.set_ylim([0,ram_total])
+    ax1.set_ylim([0,ram_total+2])
     # CPU Graph
     cpu_line, = ax2.plot([], [], "cyan", label="CPU Usage (%)", linewidth=2)
-    ax2.set_title("CPU Usage Over Time", color="white")
     ax2.set_ylabel("Usage (%)", color="white")
     ax2.set_xlabel("Time (Updates)", color="white")
     ax2.legend()
@@ -126,7 +133,6 @@ if __name__ == "__main__":
     ax2.grid(color="gray", linestyle="--", linewidth=0.5)
     cpu_text = ax2.text(0.02, 0.9, "", transform=ax2.transAxes, fontsize=12, color="cyan")
     ax2.set_ylim([0,100])
-    ax1.set_xlim(i-5, i+0.1)
 
     plt.subplots_adjust(hspace=0.4)
 
