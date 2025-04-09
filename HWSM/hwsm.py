@@ -58,6 +58,20 @@ def update_chart(frame, time_list, ram_list, cpu_list, ram_line, cpu_line, total
         
     return ram_line, cpu_line, total_cpu_line, ram_text, cpu_text, ax1, ax2, ax3
 
+def Screen1(event):
+    #Default screen with latest data brief
+    pass
+
+def Screen2(event):
+  #Screen with total data  
+  if ax3.get_visible() == True:
+    ax1.set_visible(True)
+    ax2.set_visible(True)
+    ax3.set_visible(False)
+  else:  
+    ax1.set_visible(False)
+    ax2.set_visible(False)
+    ax3.set_visible(True)
 
 def on_hover(event):
     if event.inaxes:
@@ -77,7 +91,8 @@ def toggle_theme(event):
         ram_text.set_color("black")
         cpu_text.set_color("black")
         theme_button.label.set_text("Dark Mode")
-        theme_button.label.set_color("black")
+        theme_button.label.set_color("gray")
+        Screen2_button.label.set_color("gray")
         theme_button.hovercolor="whitesmoke"
         current_theme = "light"
         ax1.set_ylabel("Usage (%)", color="black")
@@ -97,6 +112,7 @@ def toggle_theme(event):
         cpu_text.set_color("cyan")
         theme_button.label.set_text("Light Mode")
         theme_button.label.set_color("white")
+        Screen2_button.label.set_color("white")
         theme_button.hovercolor="black"
         current_theme = "dark"
         ax1.set_ylabel("Usage (%)", color="white")
@@ -105,6 +121,7 @@ def toggle_theme(event):
         ax2.set_xlabel("Time (Updates)", color="white")
         ax3.set_ylabel("Usage (%)", color="white")
         ax3.set_xlabel("Time (Updates)", color="white")
+        ax3.set_visible("True")
         coord_display = fig.text(0.02, 0.02, "", fontsize=12, color="white")
         
     fig.canvas.draw_idle()
@@ -123,11 +140,11 @@ if __name__ == "__main__":
     
     # Setup Matplotlib with dark mode as default
     plt.style.use("dark_background")
-    fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(9, 6))
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(9, 6))
     fig.patch.set_facecolor("#121212")
     ax1.set_facecolor("#1e1e1e")
     ax2.set_facecolor("#1e1e1e")
-    ax3.set_facecolor("#1e1e1e")
+    
 
     # RAM Graph
     ram_line, = ax1.plot([], [], "r-", label="RAM Usage (GB)", linewidth=2)
@@ -149,6 +166,8 @@ if __name__ == "__main__":
     ax2.set_ylim([0,100])
 
     # CPU Graph - Total
+    ax3 = plt.axes([.15, .55, .75, .3])
+    ax3.set_facecolor("#1e1e1e")
     total_cpu_line, = ax3.plot([], [], "blue", label="Total CPU usage (%)", linewidth=2)
     ax3.set_ylabel("Usage (%)", color="white")
     ax3.set_xlabel("Time (Updates)", color="white")
@@ -156,6 +175,7 @@ if __name__ == "__main__":
     ax3.grid(color="gray", linestyle="--", linewidth=0.5)
     total_cpu_text = ax3.text(0.02, 0.9, "", transform=ax3.transAxes, fontsize=12, color="blue")
     ax3.set_ylim([0,100])
+    ax3.set_visible(False)
     
     plt.subplots_adjust(hspace=0.4)
 
@@ -163,13 +183,20 @@ if __name__ == "__main__":
     coord_display = fig.text(0.02, 0.02, "", fontsize=12, color="white")
 
     # Create theme toggle button
-    ax_button = plt.axes([0.85, 0.92, 0.12, 0.05])  # Button position
-    theme_button = Button(ax_button, "Light Mode", color="gray", hovercolor="white")
+    ax_panel = plt.axes([0, .95, 1, 0.05])
+    ax_panel.set_visible(True)
+    ax_panel.get_xaxis().set_visible(False)
+    ax_panel.set_facecolor("#1e1e1e")
+    ax_button1 = plt.axes([.879, 0.95, 0.12, 0.05])  # Button position
+    ax_button2 = plt.axes([0, 0.95, 0.12, 0.05])  # Button position
+    theme_button = Button(ax_button1, "Light Mode", color="#1e1e1e")
+    Screen2_button = Button(ax_button2, "Total data", color="#1e1e1e")
     theme_button.on_clicked(toggle_theme)
-
+    Screen2_button.on_clicked(Screen2)
+    theme_button.label.set_color("gray")
+    Screen2_button.label.set_color("gray")
     # Enable coordinate display on hover
     fig.canvas.mpl_connect("motion_notify_event", on_hover)
-
     ani = animation.FuncAnimation(fig, update_chart, fargs=(time_list, ram_list, cpu_list, ram_line, cpu_line, total_cpu_line, ram_text, cpu_text, ax1, ax2, ax3), interval=100)
     
     # Hide system control bar
