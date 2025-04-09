@@ -50,10 +50,12 @@ def update_chart(frame, time_list, ram_list, cpu_list, ram_line, cpu_line, total
     if i < 100: 
         ax1.set_xlim(0, 100)
         ax2.set_xlim(0, 100)
+        ax3.set_xlim(0, 100)
     else:
         ax1.set_xlim(i-100, i)
         ax2.set_xlim(i-100, i)
-    
+        ax3.set_xlim(0, i)
+        
     return ram_line, cpu_line, total_cpu_line, ram_text, cpu_text, ax1, ax2, ax3
 
 
@@ -71,28 +73,38 @@ def toggle_theme(event):
         fig.patch.set_facecolor("white")
         ax1.set_facecolor("whitesmoke")
         ax2.set_facecolor("whitesmoke")
+        ax3.set_facecolor("whitesmoke")
         ram_text.set_color("black")
         cpu_text.set_color("black")
         theme_button.label.set_text("Dark Mode")
         theme_button.label.set_color("black")
         theme_button.hovercolor="whitesmoke"
         current_theme = "light"
+        ax1.set_ylabel("Usage (%)", color="black")
+        ax1.set_xlabel("Time (Updates)", color="black")
         ax2.set_ylabel("Usage (%)", color="black")
         ax2.set_xlabel("Time (Updates)", color="black")
+        ax3.set_ylabel("Usage (%)", color="black")
+        ax3.set_xlabel("Time (Updates)", color="black")
         coord_display = fig.text(0.02, 0.02, "", fontsize=12, color="black")
     else:
         plt.style.use("dark_background")
         fig.patch.set_facecolor("#121212")
         ax1.set_facecolor("#1e1e1e")
         ax2.set_facecolor("#1e1e1e")
+        ax3.set_facecolor("#1e1e1e")
         ram_text.set_color("red")
         cpu_text.set_color("cyan")
         theme_button.label.set_text("Light Mode")
         theme_button.label.set_color("white")
         theme_button.hovercolor="black"
         current_theme = "dark"
+        ax1.set_ylabel("Usage (%)", color="white")
+        ax1.set_xlabel("Time (Updates)", color="white")
         ax2.set_ylabel("Usage (%)", color="white")
         ax2.set_xlabel("Time (Updates)", color="white")
+        ax3.set_ylabel("Usage (%)", color="white")
+        ax3.set_xlabel("Time (Updates)", color="white")
         coord_display = fig.text(0.02, 0.02, "", fontsize=12, color="white")
         
     fig.canvas.draw_idle()
@@ -137,13 +149,12 @@ if __name__ == "__main__":
     ax2.set_ylim([0,100])
 
     # CPU Graph - Total
-    total_cpu_line, = ax3.plot([], [], "cyan", linewidth=2)
+    total_cpu_line, = ax3.plot([], [], "blue", label="Total CPU usage (%)", linewidth=2)
     ax3.set_ylabel("Usage (%)", color="white")
     ax3.set_xlabel("Time (Updates)", color="white")
     ax3.legend()
-    ax3.set_xticklabels([])
     ax3.grid(color="gray", linestyle="--", linewidth=0.5)
-    cpu_text = ax3.text(0.02, 0.9, "", transform=ax3.transAxes, fontsize=12, color="cyan")
+    total_cpu_text = ax3.text(0.02, 0.9, "", transform=ax3.transAxes, fontsize=12, color="blue")
     ax3.set_ylim([0,100])
     
     plt.subplots_adjust(hspace=0.4)
