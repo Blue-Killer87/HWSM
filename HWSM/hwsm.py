@@ -6,8 +6,6 @@ import matplotlib.animation as animation
 from matplotlib.widgets import Button
 global i
 # Default Theme
-cpu_peak = 0
-ram_peak = 0
 current_theme = "dark"
 plt.rcParams['toolbar'] = 'None'
 i = 6
@@ -15,30 +13,24 @@ i = 6
 ram_total = psutil.virtual_memory().total / (1024**3)
 
 # Daemon to measure ram
-def monitor_ram(ram_list, time_list, ram_peak):
+def monitor_ram(ram_list, time_list):
     while True:
         ram_usage = psutil.virtual_memory().used / (1024 ** 3)  # Convert to GB
         ram_list.append(ram_usage)
         time_list.append(len(time_list))  # Use time index
-        if ram_usage > ram_peak:
-            ram_peak = ram_usage
-        print(ram_peak)
-        time.sleep(0.1)
+        time.sleep(0.15)
 
 # Daemon to measure cpu
-def monitor_cpu(cpu_list, time_list, cpu_peak):
+def monitor_cpu(cpu_list, time_list):
     while True:
-        cpu_usage = psutil.cpu_percent(interval=0.05)  # Get CPU usageě in %
+        cpu_usage = psutil.cpu_percent(interval=0.05)  # Get CPU usage in %
         cpu_list.append(cpu_usage)
-        if cpu_usage > cpu_peak:
-            cpu_peak = cpu_usage
-        print(cpu_peak)
-        time.sleep(0.1)
+        time.sleep(0.15)
         
 
-def update_chart(frame, time_list, ram_list, cpu_list, ram_line, cpu_line, total_cpu_line, total_ram_line, ram_text, cpu_text, ax1, ax2, ax3, ax4, cpu_peak):
+def update_chart(frame, time_list, ram_list, cpu_list, ram_line, cpu_line, total_cpu_line, total_ram_line, ram_text, cpu_text, ax1, ax2, ax3, ax4):
     if not ram_list or not cpu_list:
-        return ram_line, cpu_line, total_cpu_line, total_ram_line, ram_text, cpu_text
+        return ram_line, cpu_line, total_cpu_line, total_ram_line, ram_text, cpu_text, total_cpu_text
     min_len = min(len(time_list), len(ram_list), len(cpu_list))
 
     time_values = time_list[:min_len]
@@ -54,7 +46,6 @@ def update_chart(frame, time_list, ram_list, cpu_list, ram_line, cpu_line, total
     # Update latest text
     ram_text.set_text(f"Latest RAM Usage: {ram_values[-1]:.2f} GB")
     cpu_text.set_text(f"Latest CPU Usage: {cpu_values[-1]:.2f}%")
-    cpu_text.set_text(f"Highest CPU usage: {cpu_peak:.2f}%")
  
 
     i = time_values[-1]
@@ -155,8 +146,8 @@ def toggle_theme(event):
         ax_panel.set_facecolor("#1e1e1e")
         theme_button.color=("#1e1e1e")
         Screen2_button.color=("#1e1e1e")
-        ram_text.set_color("orange")
-        cpu_text.set_color("cyan")
+        ram_text.set_color("red")
+        cpu_text.set_color("blue")
         theme_button.label.set_text("Light Mode")
         theme_button.label.set_color("white")
         Screen2_button.label.set_color("white")
@@ -202,8 +193,8 @@ if __name__ == "__main__":
     cpu_list = manager.list()
     time_list = manager.list()
 
-    ram_process = multiprocessing.Process(target=monitor_ram, args=(ram_list, time_list, ram_peak), daemon=True)
-    cpu_process = multiprocessing.Process(target=monitor_cpu, args=(cpu_list, time_list, cpu_peak), daemon=True)
+    ram_process = multiprocessing.Process(target=monitor_ram, args=(ram_list, time_list), daemon=True)
+    cpu_process = multiprocessing.Process(target=monitor_cpu, args=(cpu_list, time_list), daemon=True)
     
     ram_process.start()
     cpu_process.start()
@@ -279,7 +270,7 @@ if __name__ == "__main__":
     Screen2_button.label.set_color("gray")
     # Enable coordinate display on hover
     fig.canvas.mpl_connect("motion_notify_event", on_hover)
-    ani = animation.FuncAnimation(fig, update_chart, fargs=(time_list, ram_list, cpu_list, ram_line, cpu_line, total_cpu_line, total_ram_line, ram_text, cpu_text, ax1, ax2, ax3, ax4, cpu_peak), interval=100)
+    ani = animation.FuncAnimation(fig, update_chart, fargs=(time_list, ram_list, cpu_list, ram_line, cpu_line, total_cpu_line, total_ram_line, ram_text, cpu_text, ax1, ax2, ax3, ax4), interval=100)
     
     # Hide system control bar
     try:
