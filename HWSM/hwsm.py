@@ -12,6 +12,8 @@ i = 6
 # Parameters
 ram_total = psutil.virtual_memory().total / (1024**3)
 
+
+
 # Daemon to measure ram
 def monitor_ram(ram_list, time_list):
     while True:
@@ -62,39 +64,77 @@ def update_chart(frame, time_list, ram_list, cpu_list, ram_line, cpu_line, total
     return ram_line, cpu_line, total_cpu_line, total_ram_line, ram_text, cpu_text, ax1, ax2, ax3, ax4
 
 
+def Screen1(event):
+    toggle_theme(event, current_theme)
+    Screen1_button.label.set_color("red")
+    if ax3.get_visible() == True or ax4.get_visible() == True:
+        ax3.set_visible(False)
+        ax4.set_visible(False)
+    ax1.set_visible(True)
+    ax2.set_visible(True)  
+    
 
 # Screen handling
 def Screen2(event):
-    pass
-
-def Screen3(event):
-  #Screen with total data  
-  if ax3.get_visible() == True:
-    ax1.set_visible(True)
-    ax2.set_visible(True)
-    ax3.set_visible(False)
-    ax4.set_visible(False)
-  else:  
+    toggle_theme(event, current_theme)
+    Screen2_button.label.set_color("red")
     ax1.set_visible(False)
     ax2.set_visible(False)
+    ax3.set_visible(False)
+    ax4.set_visible(False)
+    
+def Screen3(event):
+    toggle_theme(event, current_theme)
+    Screen3_button.label.set_color("red")
+    ax1.set_visible(False)
+    ax2.set_visible(False)
+    ax3.set_visible(False)
+    ax4.set_visible(False)
+
+
+def Screen4(event):
+    #Screen with total data  
+    toggle_theme(event, current_theme)
+    Screen4_button.label.set_color("red")
+    if ax1.get_visible() == True or ax2.get_visible() == True:
+        ax1.set_visible(False)
+        ax2.set_visible(False)
     ax3.set_visible(True)
     ax4.set_visible(True)
 
-def Screen3(event):
-    pass
-
-def Screen4(event):
-    pass
-
 def Screen5(event):
-    pass
+    toggle_theme(event, current_theme)
+    Screen5_button.label.set_color("red")
+    ax1.set_visible(False)
+    ax2.set_visible(False)
+    ax3.set_visible(False)
+    ax4.set_visible(False)
+
+def Screen6(event):
+    toggle_theme(event, current_theme)
+    Screen6_button.label.set_color("red")
+    ax1.set_visible(False)
+    ax2.set_visible(False)
+    ax3.set_visible(False)
+    ax4.set_visible(False)
 
 def Settings(event):
-    pass
+    toggle_theme(event, current_theme)
+    Settings_button.label.set_color("red")
+    ax1.set_visible(False)
+    ax2.set_visible(False)
+    ax3.set_visible(False)
+    ax4.set_visible(False)
 
 
-def toggle_theme(event):
+def toggle_theme(event, target=None):
     global current_theme
+    
+    if target == "dark":
+        current_theme = "light"
+    elif target == "light":
+        current_theme = "dark"
+
 
     if current_theme == "dark":
         plt.style.use("default")
@@ -105,25 +145,31 @@ def toggle_theme(event):
         ax4.set_facecolor("whitesmoke")
         ax_panel.set_facecolor("gray")
         theme_button.color = ("gray")
+        Screen1_button.color = ("gray")
         Screen2_button.color = ("gray")
         Screen3_button.color =("gray")
         Screen4_button.color =("gray")
         Screen5_button.color =("gray")
+        Screen6_button.color =("gray")
         Settings_button.color =("gray")
         ram_text.set_color("black")
         cpu_text.set_color("black")
         theme_button.label.set_text("Dark Mode")
         theme_button.label.set_color("white")
+        Screen1_button.label.set_color("white")
         Screen2_button.label.set_color("white")
         Screen3_button.label.set_color("white")
         Screen4_button.label.set_color("white")
         Screen5_button.label.set_color("white")
+        Screen6_button.label.set_color("white")
         Settings_button.label.set_color("white")
         theme_button.hovercolor="#1e1e1e"
+        Screen1_button.hovercolor="#1e1e1e"
         Screen2_button.hovercolor="#1e1e1e"
         Screen3_button.hovercolor="#1e1e1e"
         Screen4_button.hovercolor="#1e1e1e"
         Screen5_button.hovercolor="#1e1e1e"
+        Screen6_button.hovercolor="#1e1e1e"
         Settings_button.hovercolor="#1e1e1e"
         
         current_theme = "light"
@@ -165,25 +211,31 @@ def toggle_theme(event):
         ax4.set_facecolor("#1e1e1e")
         ax_panel.set_facecolor("#1e1e1e")
         theme_button.color=("#1e1e1e")
+        Screen1_button.color=("#1e1e1e")
         Screen2_button.color=("#1e1e1e")
         Screen3_button.color=("#1e1e1e")
         Screen4_button.color=("#1e1e1e")
         Screen5_button.color=("#1e1e1e")
+        Screen6_button.color=("#1e1e1e")
         Settings_button.color=("#1e1e1e")
         ram_text.set_color("red")
         cpu_text.set_color("blue")
         theme_button.label.set_text("Light Mode")
         theme_button.label.set_color("white")
+        Screen1_button.label.set_color("white")
         Screen2_button.label.set_color("white")
         Screen3_button.label.set_color("white")
         Screen4_button.label.set_color("white")
         Screen5_button.label.set_color("white")
+        Screen6_button.label.set_color("white")
         Settings_button.label.set_color("white")
         theme_button.hovercolor="gray"
+        Screen1_button.hovercolor="gray"
         Screen2_button.hovercolor="gray"
         Screen3_button.hovercolor="gray"
         Screen4_button.hovercolor="gray"
         Screen5_button.hovercolor="gray"
+        Screen6_button.hovercolor="gray"
         Settings_button.hovercolor="gray"
         current_theme = "dark"
         ax1.set_ylabel("Usage (%)", color="white")
@@ -215,7 +267,7 @@ def toggle_theme(event):
         ax3.tick_params(axis='y', colors='white')
         ax4.tick_params(axis='y', colors='white')
         
-        
+    
     fig.canvas.draw_idle()
 
 if __name__ == "__main__":
@@ -294,35 +346,38 @@ if __name__ == "__main__":
     ax_panel.set_facecolor("#1e1e1e")
 
     # Buttons
-    ax_button1 = plt.axes([.879, .95, .12, .05])
-    ax_button2 = plt.axes([0, .95, .12, .05])  
-    ax_button3 = plt.axes([.121, .95, .12, .05])
-    ax_button4 = plt.axes([.241, .95, .12, .05])  
-    ax_button5 = plt.axes([.361,.95,.12,.05])
-    ax_settings_button = plt.axes([.76, .95, .12, .05])
-    theme_button = Button(ax_button1, "Light Mode", color="#1e1e1e")
+    
+    ax_button1 = plt.axes([0, .95, .12, .05])
+    ax_button2 = plt.axes([.121, .95, .12, .05])  
+    ax_button3 = plt.axes([.241, .95, .12, .05])
+    ax_button4 = plt.axes([.361,.95,.12,.05])  
+    ax_button5 = plt.axes([.481,.95,.12,.05])
+    ax_button6 = plt.axes([.601,.95,.12,.05])
+    ax_settings_button = plt.axes([.721, .95, .14, .05])
+    theme_button = plt.axes([.861, .95, .138, .05])
 
-    Screen2_button = Button(ax_button2, "More", color=("#1e1e1e"))
-    Screen3_button = Button(ax_button3, "Total data", color=("#1e1e1e"))
-    Screen4_button = Button(ax_button4, "Statistics", color=("#1e1e1e"))
-    Screen5_button = Button(ax_button5, "Hardware", color=("#1e1e1e"))
+    theme_button = Button(theme_button, "Light Mode", color="#1e1e1e")
+    Screen1_button = Button(ax_button1, "Monitor", color=("#1e1e1e"))
+    Screen2_button = Button(ax_button2, "Processes", color=("#1e1e1e"))
+    Screen3_button = Button(ax_button3, "Disk", color=("#1e1e1e"))
+    Screen4_button = Button(ax_button4, "Total data", color=("#1e1e1e"))
+    Screen5_button = Button(ax_button5, "Statistics", color=("#1e1e1e"))
+    Screen6_button = Button(ax_button6, "Hardware", color=("#1e1e1e"))
     Settings_button = Button(ax_settings_button, "Settings", color=("#1e1e1e"))
-    theme_button.label.set_color("gray")
-    Screen2_button.label.set_color("gray")
-    Screen3_button.label.set_color("gray")
-    Screen4_button.label.set_color("gray")
-    Screen5_button.label.set_color("gray")
-    Settings_button.label.set_color("gray")
-
-
+    
     # Event Handling
     theme_button.on_clicked(toggle_theme)
+    Screen1_button.on_clicked(Screen1)
     Screen2_button.on_clicked(Screen2)
     Screen3_button.on_clicked(Screen3)
     Screen4_button.on_clicked(Screen4)
     Screen5_button.on_clicked(Screen5)
+    Screen6_button.on_clicked(Screen6)
     Settings_button.on_clicked(Settings)
     
+    toggle_theme(1, current_theme)
+    Screen1_button.label.set_color("red")
+
     ani = animation.FuncAnimation(fig, update_chart, fargs=(time_list, ram_list, cpu_list, ram_line, cpu_line, total_cpu_line, total_ram_line, ram_text, cpu_text, ax1, ax2, ax3, ax4), interval=100)
     
     plt.show()
