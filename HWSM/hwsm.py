@@ -20,7 +20,7 @@ def monitor_ram(ram_list, time_list):
         ram_usage = psutil.virtual_memory().used / (1024 ** 3)  # Convert to GB
         ram_list.append(ram_usage)
         time_list.append(len(time_list))  # Use time index
-        time.sleep(0.15)
+        time.sleep(0.2)
 
 # Daemon to measure cpu
 def monitor_cpu(cpu_list, time_list):
@@ -63,7 +63,8 @@ def update_chart(frame, time_list, ram_list, cpu_list, ram_line, cpu_line, total
         
     return ram_line, cpu_line, total_cpu_line, total_ram_line, ram_text, cpu_text, ax1, ax2, ax3, ax4
 
-
+# Screen handling
+# Monitor Screen
 def Screen1(event):
     toggle_theme(event, current_theme)
     Screen1_button.label.set_color("red")
@@ -73,8 +74,7 @@ def Screen1(event):
     ax1.set_visible(True)
     ax2.set_visible(True)  
     
-
-# Screen handling
+# Processes Screen
 def Screen2(event):
     toggle_theme(event, current_theme)
     Screen2_button.label.set_color("red")
@@ -83,6 +83,7 @@ def Screen2(event):
     ax3.set_visible(False)
     ax4.set_visible(False)
     
+# Disk Screen
 def Screen3(event):
     toggle_theme(event, current_theme)
     Screen3_button.label.set_color("red")
@@ -91,7 +92,7 @@ def Screen3(event):
     ax3.set_visible(False)
     ax4.set_visible(False)
 
-
+# Total Data Screen
 def Screen4(event):
     #Screen with total data  
     toggle_theme(event, current_theme)
@@ -102,6 +103,7 @@ def Screen4(event):
     ax3.set_visible(True)
     ax4.set_visible(True)
 
+# Statistics Screen
 def Screen5(event):
     toggle_theme(event, current_theme)
     Screen5_button.label.set_color("red")
@@ -110,6 +112,7 @@ def Screen5(event):
     ax3.set_visible(False)
     ax4.set_visible(False)
 
+# Hardware Screen
 def Screen6(event):
     toggle_theme(event, current_theme)
     Screen6_button.label.set_color("red")
@@ -118,7 +121,9 @@ def Screen6(event):
     ax3.set_visible(False)
     ax4.set_visible(False)
 
+# Settings Screen
 def Settings(event):
+    # Not sure what this will contain yet
     toggle_theme(event, current_theme)
     Settings_button.label.set_color("red")
     ax1.set_visible(False)
@@ -126,7 +131,7 @@ def Settings(event):
     ax3.set_visible(False)
     ax4.set_visible(False)
 
-
+# Theme toggle button handler (changing themes)
 def toggle_theme(event, target=None):
     global current_theme
     
