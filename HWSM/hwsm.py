@@ -4,13 +4,28 @@ import multiprocessing
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from matplotlib.widgets import Button
+from tabulate import tabulate
+from matplotlib.widgets import Slider
+
 global i
 # Default Theme
 current_theme = "dark"
+current_screen = 'Screen1'
+
 plt.rcParams['toolbar'] = 'None'
 i = 6
 # Parameters
 ram_total = psutil.virtual_memory().total / (1024**3)
+LINES_PER_PAGE = 25
+start_index = 0
+
+
+# GUI state tracking
+proc_list = []
+start_index = 0
+displayed_rows = 15
+text_objects = []         
+kill_buttons = []         
 
 
 
@@ -66,63 +81,87 @@ def update_chart(frame, time_list, ram_list, cpu_list, ram_line, cpu_line, total
 # Screen handling
 # Monitor Screen
 def Screen1(event):
+    current_screen = 'Screen1'
     toggle_theme(event, current_theme)
     Screen1_button.label.set_color("red")
-    if ax3.get_visible() == True or ax4.get_visible() == True:
-        ax3.set_visible(False)
-        ax4.set_visible(False)
+    ax3.set_visible(False)
+    ax4.set_visible(False)
+    ax_processes.set_visible(False)
     ax1.set_visible(True)
     ax2.set_visible(True)  
-    
+    for btn in kill_buttons:
+        ax_button.btn.set_visible(False)
+
+
 # Processes Screen
 def Screen2(event):
+    current_screen = 'Screen2'
+    global proc_list, start_index
     toggle_theme(event, current_theme)
     Screen2_button.label.set_color("red")
     ax1.set_visible(False)
     ax2.set_visible(False)
     ax3.set_visible(False)
     ax4.set_visible(False)
-    
+    ax_processes.set_visible(True)
+    proc_list = []
+    for i in psutil.process_iter():
+        try:
+            proc = [i.pid, i.name(), i.status(), i.exe()]
+            proc_list.append(proc)
+        except:
+            continue
+    start_index = 0
+    update_display()
+
 # Disk Screen
 def Screen3(event):
+    current_screen = 'Screen3'
     toggle_theme(event, current_theme)
     Screen3_button.label.set_color("red")
     ax1.set_visible(False)
     ax2.set_visible(False)
     ax3.set_visible(False)
     ax4.set_visible(False)
+    ax_processes.set_visible(False)
 
 # Total Data Screen
 def Screen4(event):
+    current_screen = 'Screen4'
     #Screen with total data  
     toggle_theme(event, current_theme)
     Screen4_button.label.set_color("red")
-    if ax1.get_visible() == True or ax2.get_visible() == True:
-        ax1.set_visible(False)
-        ax2.set_visible(False)
+    ax1.set_visible(False)
+    ax2.set_visible(False)
+    ax_processes.set_visible(False)
     ax3.set_visible(True)
     ax4.set_visible(True)
 
 # Statistics Screen
 def Screen5(event):
+    current_screen = 'Screen5'
     toggle_theme(event, current_theme)
     Screen5_button.label.set_color("red")
     ax1.set_visible(False)
     ax2.set_visible(False)
     ax3.set_visible(False)
     ax4.set_visible(False)
+    ax_processes.set_visible(False)
 
 # Hardware Screen
 def Screen6(event):
+    current_screen = 'Screen6'
     toggle_theme(event, current_theme)
     Screen6_button.label.set_color("red")
     ax1.set_visible(False)
     ax2.set_visible(False)
     ax3.set_visible(False)
     ax4.set_visible(False)
+    ax_processes.set_visible(False)
 
 # Settings Screen
 def Settings(event):
+    current_screen = 'Settings'
     # Not sure what this will contain yet
     toggle_theme(event, current_theme)
     Settings_button.label.set_color("red")
@@ -130,6 +169,7 @@ def Settings(event):
     ax2.set_visible(False)
     ax3.set_visible(False)
     ax4.set_visible(False)
+    ax_processes.set_visible(False)
 
 # Theme toggle button handler (changing themes)
 def toggle_theme(event, target=None):
@@ -340,6 +380,8 @@ if __name__ == "__main__":
     
     plt.subplots_adjust(hspace=0.4)
 
+    
+
     # Display coordinates in bottom left
     coord_display = fig.text(0.02, 0.02, "", fontsize=12, color="white")
 
@@ -383,8 +425,99 @@ if __name__ == "__main__":
     toggle_theme(1, current_theme)
     Screen1_button.label.set_color("red")
 
-    ani = animation.FuncAnimation(fig, update_chart, fargs=(time_list, ram_list, cpu_list, ram_line, cpu_line, total_cpu_line, total_ram_line, ram_text, cpu_text, ax1, ax2, ax3, ax4), interval=100)
-    
-    plt.show()
+    # Process Screen
+    ax_processes = plt.axes([0,0,1,0.95])
+    ax_processes.get_xaxis().set_visible(False)
+    ax_processes.set_facecolor("#1e1e1e")
+    ax_processes.set_visible(False)
+    proc_text = ax_processes.text(0, .99, "", va='top', ha='left', fontsize=10, color='white', family='monospace')
 
+    def update_display():
+        global text_objects, kill_buttons
+        for t in text_objects:
+            t.remove()
+        text_objects = []
+        
+        # Clear previous buttons
+        for btn in kill_buttons:
+            btn.ax.remove()
+        kill_buttons = []
+
+        ax_processes.clear()
+        ax_processes.set_xlim(0, 10)
+        ax_processes.set_ylim(0, 20)
+        ax_processes.axis("off")
+        header = ["PID", "Name", "Status", "Path"]
+        for i, h in enumerate(header):
+            text = ax_processes.text(i*2, 19, h, fontsize=12, fontweight='bold')
+            text_objects.append(text)
+
+        displayed = proc_list[start_index:start_index+displayed_rows]
+        for j, proc in enumerate(displayed):
+            for i, value in enumerate(proc):
+                text = ax_processes.text(i * 2, 18 - j, str(value)[:25], fontsize=10)
+                text_objects.append(text)
+
+            # Create a "Kill" button
+            ax_button = plt.axes([0.8, 0.69 - j * 0.035, 0.08, 0.025])
+            btn = Button(ax_button, 'Kill')
+            btn.on_clicked(lambda event, pid=proc[0]: kill_process(event, pid))
+            if current_screen == 'Screen2':
+                ax_button.set_visible(True)
+            else:
+                ax_button.set_visible(False)
+            kill_buttons.append(btn)
+
+        plt.draw()
+
+
+    def on_key(event):
+        global start_index
+        if event.key == 'down':
+            if start_index + LINES_PER_PAGE < len(proc_list):
+                start_index += 1
+                update_display()
+        elif event.key == 'up':
+            if start_index > 0:
+                start_index -= 1
+                update_display()
+
+
+    def kill_process(event, pid):
+        try:
+            p = psutil.Process(pid)
+            p.terminate()
+            print(f"Terminated process {pid}")
+        except Exception as e:
+            print(f"Failed to terminate process {pid}: {e}")
+        update_display()
+
+
+    fig.canvas.mpl_connect('key_press_event', on_key)
+    update_display()
+
+    ani = animation.FuncAnimation(
+        fig,
+        update_chart,
+        fargs=(
+            time_list,
+            ram_list,
+            cpu_list,
+            ram_line,
+            cpu_line,
+            total_cpu_line,
+            total_ram_line,
+            ram_text,
+            cpu_text,
+            ax1,
+            ax2,
+            ax3,
+            ax4
+        ),
+        interval=200,  # Refresh every 200ms
+        blit=False
+    )
+
+    plt.show()
+    
 #https://github.com/Blue-Killer87
