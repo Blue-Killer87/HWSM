@@ -1,13 +1,18 @@
 import psutil
 import time
+import numpy as np
 import multiprocessing
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from matplotlib.widgets import Button
 from tabulate import tabulate
-from matplotlib.widgets import Slider
+from datetime import datetime
+import threading
+from collections import defaultdict
+from collections import defaultdict
+import os
 
-global i
+
 # Default Theme
 current_theme = "dark"
 current_screen = 'Screen1'
@@ -16,7 +21,7 @@ plt.rcParams['toolbar'] = 'None'
 i = 6
 # Parameters
 ram_total = psutil.virtual_memory().total / (1024**3)
-LINES_PER_PAGE = 25
+LINES_PER_PAGE = 50
 start_index = 0
 
 
@@ -25,7 +30,8 @@ proc_list = []
 start_index = 0
 displayed_rows = 15
 text_objects = []         
-kill_buttons = []         
+kill_buttons = []    
+disk_buttons = []     
 
 
 
@@ -49,10 +55,9 @@ def update_chart(frame, time_list, ram_list, cpu_list, ram_line, cpu_line, total
         
         return ram_line, cpu_line, total_cpu_line, total_ram_line, ram_text, cpu_text, total_cpu_text
     min_len = min(len(time_list), len(ram_list), len(cpu_list))
-
-    time_values = time_list[:min_len]
-    ram_values = ram_list[:min_len]
-    cpu_values = cpu_list[:min_len]
+    time_values = np.array(time_list[:min_len])
+    ram_values = np.array(ram_list[:min_len])
+    cpu_values = np.array(cpu_list[:min_len])
 
     # Update data
     ram_line.set_data(time_values, ram_values)
@@ -81,29 +86,25 @@ def update_chart(frame, time_list, ram_list, cpu_list, ram_line, cpu_line, total
 # Screen handling
 # Monitor Screen
 def Screen1(event):
+    global current_screen
     current_screen = 'Screen1'
     toggle_theme(event, current_theme)
     Screen1_button.label.set_color("red")
-    ax3.set_visible(False)
-    ax4.set_visible(False)
-    ax_processes.set_visible(False)
+    hide_all()
     ax1.set_visible(True)
-    ax2.set_visible(True)  
-    for btn in kill_buttons:
-        ax_button.btn.set_visible(False)
+    ax2.set_visible(True)
 
 
 # Processes Screen
 def Screen2(event):
+    global current_screen, proc_list, start_index
     current_screen = 'Screen2'
-    global proc_list, start_index
+    hide_process_elements()
     toggle_theme(event, current_theme)
     Screen2_button.label.set_color("red")
-    ax1.set_visible(False)
-    ax2.set_visible(False)
-    ax3.set_visible(False)
-    ax4.set_visible(False)
+    hide_all()
     ax_processes.set_visible(True)
+
     proc_list = []
     for i in psutil.process_iter():
         try:
@@ -111,65 +112,95 @@ def Screen2(event):
             proc_list.append(proc)
         except:
             continue
+
     start_index = 0
+    ax_next_button.set_visible(True)
+    ax_prev_button.set_visible(True)
     update_display()
 
-# Disk Screen
 def Screen3(event):
+    global current_screen, disk_buttons
     current_screen = 'Screen3'
     toggle_theme(event, current_theme)
     Screen3_button.label.set_color("red")
-    ax1.set_visible(False)
-    ax2.set_visible(False)
-    ax3.set_visible(False)
-    ax4.set_visible(False)
-    ax_processes.set_visible(False)
+    
+    hide_all()
 
-# Total Data Screen
+    # Get partitions
+    partitions = get_disk_partitions()
+
+    # Show disk panels
+    ax_disk_pie.set_visible(True)
+    ax_disk_stats.set_visible(True)
+    ax_disk_list.set_visible(True)
+
+    Screen3.button_axes = []
+    Screen3.buttons = []
+   
+
+    # Dynamically create button axes
+    num_disks = len(partitions)
+    for i, partition in enumerate(partitions):
+        x0 = 0.02 + i * (0.96 / num_disks)
+        width = 0.94 / num_disks
+        button_ax = fig.add_axes([x0, 0.905, width, 0.04])
+        button = Button(button_ax, f"{partition.device}", color="#1e1e1e")
+        
+        # Use a default argument to fix late binding
+        def on_click(event, part=partition):
+            update_disk_display(ax_disk_pie, ax_disk_stats, part)
+
+        button.on_clicked(on_click)
+        Screen3.button_axes.append(button_ax)
+        Screen3.buttons.append(button) 
+        disk_buttons.append(button)
+
+    
+
+    # Display the first disk by default
+    update_disk_display(ax_disk_pie, ax_disk_stats, partitions[0])
+
+    plt.draw()
+
+
+# GPU Screen
 def Screen4(event):
+    global current_screen
     current_screen = 'Screen4'
-    #Screen with total data  
     toggle_theme(event, current_theme)
     Screen4_button.label.set_color("red")
-    ax1.set_visible(False)
-    ax2.set_visible(False)
-    ax_processes.set_visible(False)
-    ax3.set_visible(True)
-    ax4.set_visible(True)
+    hide_all()
+    
 
 # Statistics Screen
 def Screen5(event):
+    global current_screen
     current_screen = 'Screen5'
+    #Screen with total data  
     toggle_theme(event, current_theme)
     Screen5_button.label.set_color("red")
-    ax1.set_visible(False)
-    ax2.set_visible(False)
-    ax3.set_visible(False)
-    ax4.set_visible(False)
-    ax_processes.set_visible(False)
+    hide_all()
+    ax3.set_visible(True)
+    ax4.set_visible(True)
+    
+    
 
 # Hardware Screen
 def Screen6(event):
+    global current_screen
     current_screen = 'Screen6'
     toggle_theme(event, current_theme)
     Screen6_button.label.set_color("red")
-    ax1.set_visible(False)
-    ax2.set_visible(False)
-    ax3.set_visible(False)
-    ax4.set_visible(False)
-    ax_processes.set_visible(False)
+    hide_all()
 
 # Settings Screen
 def Settings(event):
+    global current_screen
     current_screen = 'Settings'
     # Not sure what this will contain yet
     toggle_theme(event, current_theme)
     Settings_button.label.set_color("red")
-    ax1.set_visible(False)
-    ax2.set_visible(False)
-    ax3.set_visible(False)
-    ax4.set_visible(False)
-    ax_processes.set_visible(False)
+    hide_all()
 
 # Theme toggle button handler (changing themes)
 def toggle_theme(event, target=None):
@@ -312,8 +343,103 @@ def toggle_theme(event, target=None):
         ax3.tick_params(axis='y', colors='white')
         ax4.tick_params(axis='y', colors='white')
         
-    
     fig.canvas.draw_idle()
+    
+def export_data(event):
+    if len(time_list) == 0 or len(ram_list) == 0 or len(cpu_list) == 0:
+        print("No data to export.")
+        return
+
+    # Use NumPy arrays
+    min_len = min(len(time_list), len(ram_list), len(cpu_list))
+    time_vals = np.array(time_list[:min_len])
+    ram_vals = np.array(ram_list[:min_len])
+    cpu_vals = np.array(cpu_list[:min_len])
+
+    # Create table-like text
+    export_lines = ["TimeIndex\tRAM_Usage_GB\tCPU_Usage_%"]
+    for t, r, c in zip(time_vals, ram_vals, cpu_vals):
+        export_lines.append(f"{t}\t{r:.2f}\t{c:.2f}")
+
+      # Save to file
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    filename = f"system_usage_export_{timestamp}.txt"
+    with open(filename, "w") as f:
+        f.write("\n".join(export_lines))
+
+    full_path = f"./{filename}"  # or use absolute path if needed
+    print(f"Exported to {full_path}")
+
+    # Show status text
+    status_text.set_text(f"Saved to {full_path}")
+    plt.draw()
+
+    # Function to clear the text
+    def clear_status():
+        status_text.set_text("")
+        plt.draw()
+
+    # Clear it after 3 seconds
+    threading.Timer(3.0, clear_status).start()
+
+def group_partitions_by_device():
+    device_dict = defaultdict(list)
+    for part in psutil.disk_partitions(all=False):
+        device = os.path.basename(part.device.split('p')[0])  # /dev/sda1 → sda
+        device_dict[device].append(part)
+    return device_dict
+
+# Get all the disk partitions
+def get_disk_partitions():
+    partitions = psutil.disk_partitions()
+    return partitions
+
+# Get disk usage for a given partition
+def get_disk_usage(partition):
+    usage = psutil.disk_usage(partition.mountpoint)
+    return usage
+
+# Create pie chart of disk usage
+def plot_disk_usage(ax, partition):
+    usage = get_disk_usage(partition)
+    labels = ['Used', 'Free']
+    sizes = [usage.used, usage.free]
+    ax.clear()
+    ax.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90, colors=['red', 'green'])
+    ax.axis('equal')  # Equal aspect ratio ensures pie chart is circular
+
+# Display disk stats under pie chart
+def display_disk_stats(ax_stats, partition):
+    usage = get_disk_usage(partition)
+    ax_stats.clear()
+    stats = [
+        f"Total Space: {usage.total / (1024**3):.2f} GB",
+        f"Used Space: {usage.used / (1024**3):.2f} GB",
+        f"Free Space: {usage.free / (1024**3):.2f} GB",
+        f"Format: {partition.fstype}",
+        f"Disk Type: {partition.device}"
+    ]
+    for i, stat in enumerate(stats):
+        ax_stats.text(0.05, 1 - i * 0.2, stat, transform=ax_stats.transAxes, fontsize=12, color="white")
+    ax_stats.set_axis_off()
+
+# Function to update the disk stats and pie chart when a disk is selected
+def update_disk_display(ax, ax_stats, partition):
+    plot_disk_usage(ax, partition)
+    display_disk_stats(ax_stats, partition)
+    plt.draw()
+
+def hide_all():
+    ax_disk_pie.set_visible(False)
+    ax_disk_stats.set_visible(False)
+    ax_disk_list.set_visible(False)
+    ax1.set_visible(False)
+    ax2.set_visible(False)
+    ax3.set_visible(False)
+    ax4.set_visible(False)
+    ax_processes.set_visible(False)
+    hide_process_elements()
+    hide_disk_buttons()
 
 if __name__ == "__main__":
     manager = multiprocessing.Manager()
@@ -334,7 +460,6 @@ if __name__ == "__main__":
     ax1.set_facecolor("#1e1e1e")
     ax2.set_facecolor("#1e1e1e")
     
-
     # RAM Graph
     ram_line, = ax1.plot([], [], "red", label="RAM Usage (GB)", linewidth=2)
     ax1.set_ylabel("Usage (GB)", color="white")
@@ -397,17 +522,23 @@ if __name__ == "__main__":
     ax_button1 = plt.axes([0, .95, .12, .05])
     ax_button2 = plt.axes([.121, .95, .12, .05])  
     ax_button3 = plt.axes([.241, .95, .12, .05])
-    ax_button4 = plt.axes([.361,.95,.12,.05])  
+    ax_button4 = plt.axes([.361,.95,.12,.05])   
     ax_button5 = plt.axes([.481,.95,.12,.05])
     ax_button6 = plt.axes([.601,.95,.12,.05])
     ax_settings_button = plt.axes([.721, .95, .14, .05])
     theme_button = plt.axes([.861, .95, .138, .05])
 
+    ax_export_button = plt.axes([0.02, 0.01, 0.14, 0.04])
+    export_button = Button(ax_export_button, "Export Data", color="gray")
+    export_button.on_clicked(export_data)
+    status_text = ax_export_button.figure.text(0.18, 0.025, "", fontsize=9, color="green")
+
+
     theme_button = Button(theme_button, "Light Mode", color="#1e1e1e")
     Screen1_button = Button(ax_button1, "Monitor", color=("#1e1e1e"))
     Screen2_button = Button(ax_button2, "Processes", color=("#1e1e1e"))
     Screen3_button = Button(ax_button3, "Disk", color=("#1e1e1e"))
-    Screen4_button = Button(ax_button4, "Total data", color=("#1e1e1e"))
+    Screen4_button = Button(ax_button4, "GPU", color=("#1e1e1e"))
     Screen5_button = Button(ax_button5, "Statistics", color=("#1e1e1e"))
     Screen6_button = Button(ax_button6, "Hardware", color=("#1e1e1e"))
     Settings_button = Button(ax_settings_button, "Settings", color=("#1e1e1e"))
@@ -429,47 +560,70 @@ if __name__ == "__main__":
     ax_processes = plt.axes([0,0,1,0.95])
     ax_processes.get_xaxis().set_visible(False)
     ax_processes.set_facecolor("#1e1e1e")
-    ax_processes.set_visible(False)
-    proc_text = ax_processes.text(0, .99, "", va='top', ha='left', fontsize=10, color='white', family='monospace')
+
+    def next_page(event):
+        global start_index
+        if start_index + displayed_rows < len(proc_list):
+            start_index += displayed_rows
+            update_display()
+
+    def prev_page(event):
+        global start_index
+        if start_index - displayed_rows >= 0:
+            start_index -= displayed_rows
+            update_display()
 
     def update_display():
         global text_objects, kill_buttons
-        for t in text_objects:
-            t.remove()
+
+        # Clear previous text and buttons
+        for txt in text_objects:
+            txt.remove()
         text_objects = []
-        
-        # Clear previous buttons
+            
         for btn in kill_buttons:
+            btn.ax.set_visible(False)
             btn.ax.remove()
         kill_buttons = []
 
         ax_processes.clear()
-        ax_processes.set_xlim(0, 10)
-        ax_processes.set_ylim(0, 20)
-        ax_processes.axis("off")
-        header = ["PID", "Name", "Status", "Path"]
-        for i, h in enumerate(header):
-            text = ax_processes.text(i*2, 19, h, fontsize=12, fontweight='bold')
-            text_objects.append(text)
+        ax_processes.set_facecolor("#1e1e1e")
+        ax_processes.get_xaxis().set_visible(False)
+        ax_processes.get_yaxis().set_visible(False)
 
-        displayed = proc_list[start_index:start_index+displayed_rows]
-        for j, proc in enumerate(displayed):
-            for i, value in enumerate(proc):
-                text = ax_processes.text(i * 2, 18 - j, str(value)[:25], fontsize=10)
-                text_objects.append(text)
+        # Column headers
+        headers = ["PID", "Name", "Status", "Path"]
+        y = 0.9
+        for j, header in enumerate(headers):
+            txt = ax_processes.text(0.05 + j * 0.2, y, header, fontsize=10, color="white", transform=ax_processes.transAxes)
+            text_objects.append(txt)
 
-            # Create a "Kill" button
-            ax_button = plt.axes([0.8, 0.69 - j * 0.035, 0.08, 0.025])
-            btn = Button(ax_button, 'Kill')
-            btn.on_clicked(lambda event, pid=proc[0]: kill_process(event, pid))
-            if current_screen == 'Screen2':
-                ax_button.set_visible(True)
-            else:
-                ax_button.set_visible(False)
+        # Display process rows with kill buttons
+        for idx in range(start_index, min(start_index + displayed_rows, len(proc_list))):
+            proc = proc_list[idx]
+            y -= 0.05
+            for j, value in enumerate(proc):
+                txt = ax_processes.text(0.05 + j * 0.2, y, str(value), fontsize=9, color="white", transform=ax_processes.transAxes)
+                text_objects.append(txt)
+
+            # Create Kill button
+            ax_kill = plt.axes([0.91, y - 0.03, 0.08, 0.02])
+            btn = Button(ax_kill, 'Kill', color='gray')
+            btn.on_clicked(lambda event, pid=proc[0]: kill_process(pid))
             kill_buttons.append(btn)
 
-        plt.draw()
+        fig.canvas.draw_idle()
 
+    # Create buttons for next and previous pages
+    ax_next_button = plt.axes([.88, 0.02, .1, .05])
+    ax_prev_button = plt.axes([.77, 0.02, .1, .05])
+
+    btn_next = Button(ax_next_button, "Next", color='gray')
+    btn_prev = Button(ax_prev_button, "Previous", color='gray')
+
+    # Link buttons to pagination functions
+    btn_next.on_clicked(next_page)
+    btn_prev.on_clicked(prev_page)
 
     def on_key(event):
         global start_index
@@ -483,18 +637,55 @@ if __name__ == "__main__":
                 update_display()
 
 
-    def kill_process(event, pid):
+    def kill_process(pid):
         try:
             p = psutil.Process(pid)
             p.terminate()
             print(f"Terminated process {pid}")
+            # Refresh process list
+            Screen2(None)
         except Exception as e:
             print(f"Failed to terminate process {pid}: {e}")
-        update_display()
+
+    def hide_process_elements():
+        global text_objects, kill_buttons
+        for txt in text_objects:
+            txt.remove()
+        text_objects.clear()
+        for btn in kill_buttons:
+            btn.ax.set_visible(False)
+            btn.ax.remove()
+        kill_buttons.clear()
+        ax_next_button.set_visible(False)
+        ax_prev_button.set_visible(False)
+
+    def hide_disk_buttons():
+        global disk_buttons
+        for i in disk_buttons:
+            i.ax.remove()
+            i.ax.set_visible(False)
+        disk_buttons = []
+
+
+    # Disk usage pie chart
+    ax_disk_pie = plt.axes([.15, .55, .75, .3])
+    ax_disk_pie.set_facecolor("#1e1e1e")
+    ax_disk_pie.set_visible(False)
+
+    # Stats display
+    ax_disk_stats = plt.axes([.15, .2, .75, .3])
+    ax_disk_stats.set_facecolor("#1e1e1e")
+    ax_disk_stats.set_visible(False)
+
+    ax_disk_list = plt.axes([0, .90, 1, 0.05])
+    ax_disk_list.set_visible(False)
+    ax_disk_list.set_facecolor("#1e1e1e")
+    ax_disk_list.get_xaxis().set_visible(False)
 
 
     fig.canvas.mpl_connect('key_press_event', on_key)
     update_display()
+    Screen1(1)
 
     ani = animation.FuncAnimation(
         fig,
