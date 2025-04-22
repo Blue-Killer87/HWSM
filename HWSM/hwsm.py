@@ -11,7 +11,8 @@ import threading
 from collections import defaultdict
 from collections import defaultdict
 import os
-
+import subprocess
+import json
 
 # Default Theme
 current_theme = "dark"
@@ -31,8 +32,10 @@ start_index = 0
 displayed_rows = 15
 text_objects = []         
 kill_buttons = []    
-disk_buttons = []     
-
+partition_buttons = []     
+device_buttons = []
+current_device = None
+nav_buttons = {}
 
 
 # Daemon to measure ram
@@ -118,49 +121,51 @@ def Screen2(event):
     ax_prev_button.set_visible(True)
     update_display()
 
+
+
 def Screen3(event):
-    global current_screen, disk_buttons
+    global current_screen, device_buttons, partition_buttons, current_device
     current_screen = 'Screen3'
     toggle_theme(event, current_theme)
     Screen3_button.label.set_color("red")
-    
     hide_all()
 
-    # Get partitions
-    partitions = get_disk_partitions()
-
-    # Show disk panels
     ax_disk_pie.set_visible(True)
     ax_disk_stats.set_visible(True)
     ax_disk_list.set_visible(True)
 
-    Screen3.button_axes = []
-    Screen3.buttons = []
-   
+    device_buttons.clear()
+    partition_buttons.clear()
 
-    # Dynamically create button axes
-    num_disks = len(partitions)
-    for i, partition in enumerate(partitions):
-        x0 = 0.02 + i * (0.96 / num_disks)
-        width = 0.94 / num_disks
-        button_ax = fig.add_axes([x0, 0.905, width, 0.04])
-        button = Button(button_ax, f"{partition.device}", color="#1e1e1e")
-        
-        # Use a default argument to fix late binding
-        def on_click(event, part=partition):
-            update_disk_display(ax_disk_pie, ax_disk_stats, part)
+    device_map = group_physical_partitions_by_device()
+    devices = list(device_map.keys())
+    # Detect root partition's base device
+    root_partition = next((p for p in psutil.disk_partitions(all=True) if p.mountpoint == "/"), None)
+    if root_partition:
+        system_device = os.path.basename(root_partition.device.split('p')[0])  # For nvmeXn1pY
+        if system_device not in devices:  # fallback if using lsblk which may have different names
+            system_device = next((d for d in devices if system_device in d), devices[0])
+    else:
+        system_device = devices[0]  # Fallback
 
-        button.on_clicked(on_click)
-        Screen3.button_axes.append(button_ax)
-        Screen3.buttons.append(button) 
-        disk_buttons.append(button)
+    current_device = system_device
 
-    
+    # Create Device Buttons
+    Screen3.device_button_axes = []
+    Screen3.device_buttons = []
 
-    # Display the first disk by default
-    update_disk_display(ax_disk_pie, ax_disk_stats, partitions[0])
+    for i, device in enumerate(devices):
+        x0 = 0.02 + i * (0.96 / len(devices))
+        width = 0.94 / len(devices)
+        ax = fig.add_axes([x0, 0.91, width, 0.035])
+        btn = Button(ax, device, color="#2a2a2a")
+        btn.on_clicked(lambda event, dev=device, b=btn: (highlight_device_button(dev), on_device_select(dev)))
+        Screen3.device_button_axes.append(ax)
+        Screen3.device_buttons.append(btn)
+        device_buttons.append(btn)
 
-    plt.draw()
+    # Initially select first device
+    on_device_select(current_device)
 
 
 # GPU Screen
@@ -344,11 +349,13 @@ def toggle_theme(event, target=None):
         ax4.tick_params(axis='y', colors='white')
         
     fig.canvas.draw_idle()
-    
+
+
 def export_data(event):
     if len(time_list) == 0 or len(ram_list) == 0 or len(cpu_list) == 0:
         print("No data to export.")
         return
+
 
     # Use NumPy arrays
     min_len = min(len(time_list), len(ram_list), len(cpu_list))
@@ -356,37 +363,154 @@ def export_data(event):
     ram_vals = np.array(ram_list[:min_len])
     cpu_vals = np.array(cpu_list[:min_len])
 
+
     # Create table-like text
     export_lines = ["TimeIndex\tRAM_Usage_GB\tCPU_Usage_%"]
     for t, r, c in zip(time_vals, ram_vals, cpu_vals):
         export_lines.append(f"{t}\t{r:.2f}\t{c:.2f}")
 
-      # Save to file
+    
+    # Save to file
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     filename = f"system_usage_export_{timestamp}.txt"
     with open(filename, "w") as f:
         f.write("\n".join(export_lines))
-
     full_path = f"./{filename}"  # or use absolute path if needed
     print(f"Exported to {full_path}")
+
 
     # Show status text
     status_text.set_text(f"Saved to {full_path}")
     plt.draw()
-
     # Function to clear the text
     def clear_status():
         status_text.set_text("")
         plt.draw()
-
     # Clear it after 3 seconds
     threading.Timer(3.0, clear_status).start()
 
+def is_physical_partition(part):
+    if not part.device or not part.device.startswith("/dev/"):
+        return False
+    if part.fstype.lower() in ["tmpfs", "proc", "sysfs", "devtmpfs", "devpts", "overlay", "squashfs"]:
+        return False
+    if part.mountpoint.startswith(("/proc", "/sys", "/dev")):
+        return False
+    return True
+
+def group_physical_partitions_by_device():
+    device_dict = get_all_block_devices()
+    partition_dict = defaultdict(list)
+
+    for device, parts in device_dict.items():
+        for part in parts:
+            # Simulate psutil-like object for compatibility
+            part_obj = type('Partition', (object,), {
+                "device": part["device"],
+                "mountpoint": part["mountpoint"],
+                "fstype": part["fstype"]
+            })()
+            partition_dict[device].append(part_obj)
+
+    return partition_dict
+
+
 def group_partitions_by_device():
     device_dict = defaultdict(list)
-    for part in psutil.disk_partitions(all=False):
-        device = os.path.basename(part.device.split('p')[0])  # /dev/sda1 → sda
-        device_dict[device].append(part)
+    for part in psutil.disk_partitions(all=True):
+        dev_path = os.path.basename(part.device)
+        # Match nvme0n1p1 ➝ nvme0n1, or sda1 ➝ sda
+        base = dev_path
+        if "nvme" in dev_path:
+            base = dev_path.split('p')[0]
+        else:
+            # Strip trailing digits (e.g. sda1 ➝ sda)
+            base = ''.join(filter(lambda c: not c.isdigit(), dev_path))
+        device_dict[base].append(part)
+    return device_dict
+
+
+
+def on_device_select(device):
+    global current_device, partition_buttons
+    current_device = device
+
+    # Clear previous partition buttons
+    for btn in partition_buttons:
+        destroy_button(btn)
+    partition_buttons.clear()
+
+    partitions = group_partitions_by_device().get(device, [])
+
+    if not partitions:
+        ax_disk_pie.clear()
+        ax_disk_pie.set_visible(False)
+        ax_disk_stats.clear()
+        ax_disk_stats.set_visible(False)
+        plt.draw()
+        return
+    else:
+        ax_disk_pie.set_visible(True)
+        ax_disk_stats.set_visible(True)
+
+    # Create partition buttons
+    for i, partition in enumerate(partitions):
+        x0 = 0.02 + i * (0.96 / len(partitions))
+        width = 0.94 / len(partitions)
+        ax = fig.add_axes([x0, 0.85, width, 0.04])
+        btn = Button(ax, partition.device, color="#1e1e1e")
+        btn.on_clicked(lambda event, part=partition, b=btn: on_partition_select(part, b))
+        partition_buttons.append(btn)
+
+    # Highlight device button
+    highlight_device_button(device)
+
+    # Update initial partition view
+    on_partition_select(partitions[0], partition_buttons[0])
+    plt.draw()
+
+
+
+def on_partition_select(partition, button):
+    update_disk_display(ax_disk_pie, ax_disk_stats, partition)
+    highlight_partition_button(button)
+
+def highlight_device_button(selected_device):
+    for btn in device_buttons:
+        if btn.label.get_text() == selected_device:
+            btn.label.set_color("red")
+        else:
+            btn.label.set_color("white")
+
+def highlight_partition_button(selected_button):
+    for btn in partition_buttons:
+        btn.label.set_color("white")
+    selected_button.label.set_color("red")
+
+def get_all_block_devices():
+    result = subprocess.run(['lsblk', '-J', '-o', 'NAME,TYPE,MOUNTPOINT,FSTYPE'], capture_output=True, text=True)
+    data = json.loads(result.stdout)
+    device_dict = defaultdict(list)
+
+    def process_device(dev):
+        if dev["type"] == "disk":
+            device_name = dev["name"]  # e.g., nvme0n1
+            device_dict[device_name]  # initialize
+        if "children" in dev:
+            for child in dev["children"]:
+                part_name = child["name"]  # e.g., nvme0n1p2
+                mountpoint = child.get("mountpoint") or ""
+                fstype = child.get("fstype") or ""
+                device_name = dev["name"]
+                device_dict[device_name].append({
+                    "device": f"/dev/{part_name}",
+                    "mountpoint": mountpoint,
+                    "fstype": fstype
+                })
+
+    for blockdev in data["blockdevices"]:
+        process_device(blockdev)
+
     return device_dict
 
 # Get all the disk partitions
@@ -430,6 +554,7 @@ def update_disk_display(ax, ax_stats, partition):
     plt.draw()
 
 def hide_all():
+    global device_buttons
     ax_disk_pie.set_visible(False)
     ax_disk_stats.set_visible(False)
     ax_disk_list.set_visible(False)
@@ -439,7 +564,12 @@ def hide_all():
     ax4.set_visible(False)
     ax_processes.set_visible(False)
     hide_process_elements()
-    hide_disk_buttons()
+    hide_partition_buttons()
+
+    # Clear device buttons
+    for btn in device_buttons:
+        destroy_button(btn)
+    device_buttons.clear()
 
 if __name__ == "__main__":
     manager = multiprocessing.Manager()
@@ -504,8 +634,6 @@ if __name__ == "__main__":
     ax4.set_visible(False)
     
     plt.subplots_adjust(hspace=0.4)
-
-    
 
     # Display coordinates in bottom left
     coord_display = fig.text(0.02, 0.02, "", fontsize=12, color="white")
@@ -636,6 +764,11 @@ if __name__ == "__main__":
                 start_index -= 1
                 update_display()
 
+    def destroy_button(btn):
+        if hasattr(btn, 'disconnect_events'):
+            btn.disconnect_events()
+        if btn.ax in fig.axes:
+            btn.ax.remove()
 
     def kill_process(pid):
         try:
@@ -659,12 +792,12 @@ if __name__ == "__main__":
         ax_next_button.set_visible(False)
         ax_prev_button.set_visible(False)
 
-    def hide_disk_buttons():
-        global disk_buttons
-        for i in disk_buttons:
+    def hide_partition_buttons():
+        global partition_buttons
+        for i in partition_buttons:
             i.ax.remove()
             i.ax.set_visible(False)
-        disk_buttons = []
+        partition_buttons = []
 
 
     # Disk usage pie chart
