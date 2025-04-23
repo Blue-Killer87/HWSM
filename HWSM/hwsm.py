@@ -1,4 +1,5 @@
 import psutil
+import GPUtil
 import time
 import numpy as np
 import multiprocessing
@@ -13,6 +14,9 @@ from collections import defaultdict
 import os
 import subprocess
 import json
+import shutil
+import re
+
 
 # Default Theme
 current_theme = "dark"
@@ -175,6 +179,14 @@ def Screen4(event):
     toggle_theme(event, current_theme)
     Screen4_button.label.set_color("red")
     hide_all()
+
+    ax_gpu_info.clear()
+    ax_gpu_info.set_facecolor("#2a2a2a")
+
+    gpu_data = detect_gpus()
+    plot_gpu_usage(ax_gpu_info, gpu_data)
+
+    fig.canvas.draw()
     
 
 # Statistics Screen
@@ -553,6 +565,85 @@ def update_disk_display(ax, ax_stats, partition):
     display_disk_stats(ax_stats, partition)
     plt.draw()
 
+# GPU stats
+def detect_gpus():
+    gpus = []
+
+    # NVIDIA detection using nvidia-smi
+    try:
+        output = subprocess.check_output(
+            ['nvidia-smi', '--query-gpu=name,memory.total,memory.used,utilization.gpu',
+             '--format=csv,noheader,nounits'],
+            text=True
+        )
+        for line in output.strip().split('\n'):
+            name, mem_total, mem_used, util = [x.strip() for x in line.split(',')]
+            gpus.append({
+                "vendor": "NVIDIA",
+                "name": name,
+                "memory_total": float(mem_total),
+                "memory_used": float(mem_used),
+                "utilization": float(util)
+            })
+    except Exception as e:
+        print("NVIDIA detection failed:", e)
+
+    # Intel fallback using lshw
+    try:
+        output = subprocess.check_output(['lshw', '-C', 'display'], text=True)
+        for block in output.strip().split("*-display"):
+            if "Intel" in block:
+                gpus.append({
+                    "vendor": "Intel",
+                    "name": "Intel Integrated Graphics",
+                    "memory_total": None,
+                    "memory_used": None,
+                    "utilization": None  # Could be extended using intel_gpu_top
+                })
+    except Exception as e:
+        print("Intel detection failed:", e)
+
+    # AMD fallback using lshw
+    try:
+        output = subprocess.check_output(['lshw', '-C', 'display'], text=True)
+        for block in output.strip().split("*-display"):
+            if "AMD" in block or "Radeon" in block:
+                gpus.append({
+                    "vendor": "AMD",
+                    "name": "AMD GPU",
+                    "memory_total": None,
+                    "memory_used": None,
+                    "utilization": None  # Could be extended using radeontop
+                })
+    except Exception as e:
+        print("AMD detection failed:", e)
+
+    return gpus
+
+def plot_gpu_usage(ax, gpu_info_list):
+    ax.clear()
+    ax.set_title("GPU Utilization", color='white')
+    labels = []
+    usage = []
+
+    for gpu in gpu_info_list:
+        label = f"{gpu['vendor']} - {gpu['name']}"
+        labels.append(label)
+        usage.append(gpu['utilization'] if gpu['utilization'] is not None else 0)
+
+    ax.barh(labels, usage, color='limegreen')
+    ax.set_xlim(0, 100)
+    ax.set_xlabel("Utilization (%)", color='white')
+    ax.tick_params(colors='white')
+    ax.set_facecolor("#2a2a2a")
+    ax.xaxis.label.set_color('white')
+    ax.yaxis.label.set_color('white')
+    ax.spines['bottom'].set_color('white')
+    ax.spines['top'].set_color('white')
+    ax.spines['left'].set_color('white')
+    ax.spines['right'].set_color('white')
+
+
 def hide_all():
     global device_buttons
     ax_disk_pie.set_visible(False)
@@ -655,6 +746,10 @@ if __name__ == "__main__":
     ax_button6 = plt.axes([.601,.95,.12,.05])
     ax_settings_button = plt.axes([.721, .95, .14, .05])
     theme_button = plt.axes([.861, .95, .138, .05])
+
+    ax_gpu_info = fig.add_axes([0.05, 0.2, 0.9, 0.7])  # Adjust as needed
+    ax_gpu_info.set_visible(False)
+    
 
     ax_export_button = plt.axes([0.02, 0.01, 0.14, 0.04])
     export_button = Button(ax_export_button, "Export Data", color="gray")
