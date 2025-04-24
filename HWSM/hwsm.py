@@ -1,3 +1,5 @@
+#!/bin/python3
+
 import psutil
 import GPUtil
 import time
@@ -101,7 +103,6 @@ def Screen1(event):
     ax1.set_visible(True)
     ax2.set_visible(True)
 
-
 # Processes Screen
 def Screen2(event):
     global current_screen, proc_list, start_index
@@ -124,7 +125,6 @@ def Screen2(event):
     ax_next_button.set_visible(True)
     ax_prev_button.set_visible(True)
     update_display()
-
 
 
 def Screen3(event):
@@ -171,7 +171,6 @@ def Screen3(event):
     # Initially select first device
     on_device_select(current_device)
 
-
 # GPU Screen
 def Screen4(event):
     global current_screen
@@ -179,15 +178,6 @@ def Screen4(event):
     toggle_theme(event, current_theme)
     Screen4_button.label.set_color("red")
     hide_all()
-
-    ax_gpu_info.clear()
-    ax_gpu_info.set_facecolor("#2a2a2a")
-
-    gpu_data = detect_gpus()
-    plot_gpu_usage(ax_gpu_info, gpu_data)
-
-    fig.canvas.draw()
-    
 
 # Statistics Screen
 def Screen5(event):
@@ -200,8 +190,6 @@ def Screen5(event):
     ax3.set_visible(True)
     ax4.set_visible(True)
     
-    
-
 # Hardware Screen
 def Screen6(event):
     global current_screen
@@ -227,7 +215,6 @@ def toggle_theme(event, target=None):
         current_theme = "light"
     elif target == "light":
         current_theme = "dark"
-
 
     if current_theme == "dark":
         plt.style.use("default")
@@ -645,7 +632,7 @@ def plot_gpu_usage(ax, gpu_info_list):
 
 
 def hide_all():
-    global device_buttons
+    global device_buttons, partition_buttons
     ax_disk_pie.set_visible(False)
     ax_disk_stats.set_visible(False)
     ax_disk_list.set_visible(False)
@@ -656,6 +643,10 @@ def hide_all():
     ax_processes.set_visible(False)
     hide_process_elements()
     hide_partition_buttons()
+    
+    for btn in partition_buttons:
+        destroy_button(btn)
+    partition_buttons.clear()
 
     # Clear device buttons
     for btn in device_buttons:
@@ -934,7 +925,8 @@ if __name__ == "__main__":
             ax4
         ),
         interval=200,  # Refresh every 200ms
-        blit=False
+        blit=False,
+        save_count=20
     )
 
     plt.show()
