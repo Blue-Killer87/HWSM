@@ -1,5 +1,0 @@
-#/bin/bash
-# Move the python script to /bin folder, then use this script to launch the app without the need to type the whole command
-python /bin/hwsm.py
-
-#or you can change the path to wherever your script is
