@@ -8,6 +8,7 @@ import multiprocessing
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from matplotlib.widgets import Button
+import matplotlib.gridspec as gridspec
 from tabulate import tabulate
 from datetime import datetime
 import threading
@@ -15,9 +16,12 @@ from collections import defaultdict
 from collections import defaultdict
 import os
 import subprocess
-import json
-import shutil
 import re
+import json
+import platform
+
+system = platform.system()
+
 
 
 # Default Theme
@@ -42,6 +46,16 @@ partition_buttons = []
 device_buttons = []
 current_device = None
 nav_buttons = {}
+gpu_count = 3
+gpu_render = False
+gpu_timer = None
+
+manager = multiprocessing.Manager()
+ram_list = manager.list()
+cpu_list = manager.list()
+time_list = manager.list()
+
+
 
 
 # Daemon to measure ram
@@ -58,6 +72,11 @@ def monitor_cpu(cpu_list, time_list):
         cpu_usage = psutil.cpu_percent(interval=0.05)  # Get CPU usage in %
         cpu_list.append(cpu_usage)
         time.sleep(0.15)
+
+
+
+ram_process = multiprocessing.Process(target=monitor_ram, args=(ram_list, time_list), daemon=True)
+cpu_process = multiprocessing.Process(target=monitor_cpu, args=(cpu_list, time_list), daemon=True)
 
 def update_chart(frame, time_list, ram_list, cpu_list, ram_line, cpu_line, total_cpu_line, total_ram_line, ram_text, cpu_text, ax1, ax2, ax3, ax4):
     if not ram_list or not cpu_list:
@@ -132,8 +151,8 @@ def Screen3(event):
     current_screen = 'Screen3'
     toggle_theme(event, current_theme)
     Screen3_button.label.set_color("red")
+   
     hide_all()
-
     ax_disk_pie.set_visible(True)
     ax_disk_stats.set_visible(True)
     ax_disk_list.set_visible(True)
@@ -157,12 +176,13 @@ def Screen3(event):
     # Create Device Buttons
     Screen3.device_button_axes = []
     Screen3.device_buttons = []
-
+    
     for i, device in enumerate(devices):
         x0 = 0.02 + i * (0.96 / len(devices))
         width = 0.94 / len(devices)
         ax = fig.add_axes([x0, 0.91, width, 0.035])
         btn = Button(ax, device, color="#2a2a2a")
+        
         btn.on_clicked(lambda event, dev=device, b=btn: (highlight_device_button(dev), on_device_select(dev)))
         Screen3.device_button_axes.append(ax)
         Screen3.device_buttons.append(btn)
@@ -173,11 +193,28 @@ def Screen3(event):
 
 # GPU Screen
 def Screen4(event):
-    global current_screen
+    global current_screen, gpu_render, gpu_timer
     current_screen = 'Screen4'
     toggle_theme(event, current_theme)
     Screen4_button.label.set_color("red")
+    
     hide_all()
+    gpu_render = True
+
+    def update_loop():
+        update_gpu_display(gpu_render)
+
+    # Stop any existing timer first
+    if gpu_timer is not None:
+        gpu_timer.stop()
+
+    gpu_timer = fig.canvas.new_timer(interval=2000)  # every 2 seconds
+    gpu_timer.add_callback(update_loop)
+    gpu_timer.start()
+
+    update_gpu_display(gpu_render)
+
+    
 
 # Statistics Screen
 def Screen5(event):
@@ -463,6 +500,7 @@ def on_device_select(device):
 
     # Highlight device button
     highlight_device_button(device)
+    
 
     # Update initial partition view
     on_partition_select(partitions[0], partition_buttons[0])
@@ -552,87 +590,272 @@ def update_disk_display(ax, ax_stats, partition):
     display_disk_stats(ax_stats, partition)
     plt.draw()
 
-# GPU stats
-def detect_gpus():
-    gpus = []
 
-    # NVIDIA detection using nvidia-smi
+def get_windows_gpus():
+    gpus = []
     try:
-        output = subprocess.check_output(
-            ['nvidia-smi', '--query-gpu=name,memory.total,memory.used,utilization.gpu',
-             '--format=csv,noheader,nounits'],
-            text=True
-        )
-        for line in output.strip().split('\n'):
-            name, mem_total, mem_used, util = [x.strip() for x in line.split(',')]
+        output = subprocess.check_output(["wmic", "path", "win32_videocontroller", "get", "name"], universal_newlines=True)
+        lines = output.strip().split("\n")[1:]  # skip the header
+        for line in lines:
+            gpu_name = line.strip()
+            if gpu_name:
+                gpus.append({'name': gpu_name, 'load': None, 'memory_used': None, 'memory_total': None, 'temperature': None})
+    except Exception as e:
+        print(f"Error detecting GPUs on Windows: {e}")
+    return gpus
+
+def get_linux_gpus():
+    gpus = []
+    try:
+        output = subprocess.check_output(["lshw", "-C", "display"], universal_newlines=True)
+        entries = output.split("*-display")
+        for entry in entries:
+            if "product:" in entry:
+                lines = entry.splitlines()
+                name_line = next((line for line in lines if "product:" in line), None)
+                if name_line:
+                    gpu_name = name_line.split("product:")[1].strip()
+                    gpus.append({'name': gpu_name, 'load': None, 'memory_used': None, 'memory_total': None, 'temperature': None})
+    except Exception as e:
+        print(f"Error detecting GPUs on Linux: {e}")
+    return gpus
+
+
+def get_nvidia_gpu_stats():
+    gpus = []
+    try:
+        nvidia_gpus = GPUtil.getGPUs()
+        for ngpu in nvidia_gpus:
             gpus.append({
-                "vendor": "NVIDIA",
-                "name": name,
-                "memory_total": float(mem_total),
-                "memory_used": float(mem_used),
-                "utilization": float(util)
+                'name': ngpu.name,
+                'load': ngpu.load * 100,  # Load in percentage
+                'memory_used': ngpu.memoryUsed,  # Memory used in MB
+                'memory_total': ngpu.memoryTotal,  # Total memory in MB
+                'temperature': ngpu.temperature  # Temperature in Celsius
             })
     except Exception as e:
-        print("NVIDIA detection failed:", e)
+        print(f"Error fetching NVIDIA GPU stats: {e}")
+    return gpus
 
-    # Intel fallback using lshw
-    try:
-        output = subprocess.check_output(['lshw', '-C', 'display'], text=True)
-        for block in output.strip().split("*-display"):
-            if "Intel" in block:
-                gpus.append({
-                    "vendor": "Intel",
-                    "name": "Intel Integrated Graphics",
-                    "memory_total": None,
-                    "memory_used": None,
-                    "utilization": None  # Could be extended using intel_gpu_top
-                })
-    except Exception as e:
-        print("Intel detection failed:", e)
+def get_intel_gpu_stats():
+    gpus = []
 
-    # AMD fallback using lshw
     try:
-        output = subprocess.check_output(['lshw', '-C', 'display'], text=True)
-        for block in output.strip().split("*-display"):
-            if "AMD" in block or "Radeon" in block:
-                gpus.append({
-                    "vendor": "AMD",
-                    "name": "AMD GPU",
-                    "memory_total": None,
-                    "memory_used": None,
-                    "utilization": None  # Could be extended using radeontop
-                })
+        drm_cards = [
+            p for p in os.listdir('/sys/class/drm') if re.match(r'card\d+$', p)
+        ]
+
+        for card in drm_cards:
+            device_path = f"/sys/class/drm/{card}/device"
+            vendor_path = os.path.join(device_path, "vendor")
+
+            if not os.path.exists(vendor_path):
+                continue
+
+            with open(vendor_path) as f:
+                vendor = f.read().strip()
+
+            if vendor != "0x8086":
+                continue  # Not Intel
+
+            print(f"[Intel GPU Detected] {card}")
+
+            name = f"Intel GPU ({card})"
+            temperature = 0.0
+            load = 0.0
+
+            # Temperature
+            temperature = 0.0
+            hwmon_base = os.path.join(device_path, "hwmon")
+            if os.path.exists(hwmon_base):
+                hwmons = os.listdir(hwmon_base)
+                if hwmons:
+                    temp_path = os.path.join(hwmon_base, hwmons[0], "temp1_input")
+                    if os.path.exists(temp_path):
+                        with open(temp_path) as f:
+                            temperature = int(f.read().strip()) / 1000.0
+                    else:
+                        print(f"Temperature file missing: {temp_path}")
+                else:
+                    print(f"No hwmon dirs found in: {hwmon_base}")
+            else:
+                print(f"No hwmon path for Intel GPU: {hwmon_base}")
+
+            # Load (estimated from frequency)
+            load = 0.0
+            cur_freq_path = os.path.join(device_path, "gt_cur_freq_mhz")
+            max_freq_path = os.path.join(device_path, "gt_max_freq_mhz")
+
+            if os.path.exists(cur_freq_path) and os.path.exists(max_freq_path):
+                with open(cur_freq_path) as f:
+                    cur = int(f.read().strip())
+                with open(max_freq_path) as f:
+                    maxf = int(f.read().strip())
+                if maxf > 0:
+                    load = (cur / maxf) * 100
+            else:
+                print("Intel GPU freq paths not found.")
+
+            gpus.append({
+                'name': name,
+                'load': load,
+                'memory_used': 0.0,
+                'memory_total': 0.0,
+                'temperature': temperature
+            })
+
     except Exception as e:
-        print("AMD detection failed:", e)
+        print(f"[Intel GPU Stats Error] {e}")
 
     return gpus
 
-def plot_gpu_usage(ax, gpu_info_list):
-    ax.clear()
-    ax.set_title("GPU Utilization", color='white')
-    labels = []
-    usage = []
 
-    for gpu in gpu_info_list:
-        label = f"{gpu['vendor']} - {gpu['name']}"
-        labels.append(label)
-        usage.append(gpu['utilization'] if gpu['utilization'] is not None else 0)
+def get_amd_gpu_stats():
+    gpus = []
+    try:
+        load = 0.0
+        memory_used = 0.0
+        memory_total = 0.0
+        temperature = 0.0
 
-    ax.barh(labels, usage, color='limegreen')
-    ax.set_xlim(0, 100)
-    ax.set_xlabel("Utilization (%)", color='white')
-    ax.tick_params(colors='white')
-    ax.set_facecolor("#2a2a2a")
-    ax.xaxis.label.set_color('white')
-    ax.yaxis.label.set_color('white')
-    ax.spines['bottom'].set_color('white')
-    ax.spines['top'].set_color('white')
-    ax.spines['left'].set_color('white')
-    ax.spines['right'].set_color('white')
+        try:
+            rocm_output = subprocess.check_output(["rocm-smi", "--showuse", "--showtemp", "--showmemuse"]).decode()
+
+            # Example parsing logic (will vary by rocm-smi version)
+            load_match = re.search(r'GPU\s+\d+\s+:\s+(\d+)%', rocm_output)
+            load = float(load_match.group(1)) if load_match else 0.0
+
+            temp_match = re.search(r'Temperature.*?:\s+(\d+)\.\d+C', rocm_output)
+            temperature = float(temp_match.group(1)) if temp_match else 0.0
+
+            mem_match = re.search(r'Memory Used.*?:\s+(\d+)\s+MiB\s*/\s*(\d+)\s+MiB', rocm_output)
+            if mem_match:
+                memory_used = float(mem_match.group(1))
+                memory_total = float(mem_match.group(2))
+
+        except Exception:
+            # Fallback to `sensors` for temp
+            sensors_output = subprocess.check_output(["sensors"]).decode()
+            temp_match = re.search(r"edge:\s+\+?([\d.]+)°C", sensors_output)
+            temperature = float(temp_match.group(1)) if temp_match else 0.0
+
+        gpus.append({
+            'name': 'AMD Radeon GPU',
+            'load': load,
+            'memory_used': memory_used,
+            'memory_total': memory_total,
+            'temperature': temperature
+        })
+    except Exception as e:
+        print(f"[AMD] Error fetching GPU stats: {e}")
+    return gpus
+
+def get_gpu_info():
+    detected_gpus = []
+
+    if system == "Windows":
+        detected_gpus = get_windows_gpus()
+    elif system == "Linux":
+        detected_gpus = get_linux_gpus()
+
+    nvidia_stats = get_nvidia_gpu_stats()
+    intel_stats = get_intel_gpu_stats()
+    amd_stats = get_amd_gpu_stats()
+
+    for gpu in detected_gpus:
+        name = gpu['name'].lower()
+
+        if "nvidia" in name or "geforce" in name:
+            match = next((g for g in nvidia_stats if any(part.lower() in name for part in g['name'].split())), None)
+        elif "intel" in name or "uhd" in name:
+            match = next((g for g in intel_stats if any(part.lower() in name for part in g['name'].split())), None)
+        elif "amd" in name or "radeon" in name:
+            match = next((g for g in amd_stats if any(part.lower() in name for part in g['name'].split())), None)
+        else:
+            match = None
+
+        if match:
+            gpu.update(match)
+            print(f"Matched: {gpu['name']} with stats: {match}")
+
+    return detected_gpus
+
+def update_gpu_display(render):
+    gpus = get_gpu_info()
+    #print("Detected GPUs:", gpus) #For debug
+    
+    try:
+        for ax in gpu_axes:
+            ax.set_visible(False)
+        plt.draw()
+    except:
+        print("cannot unload or start daemon")
+
+    for ax in gpu_axes:
+        ax.clear()
+        ax.set_visible(False)
+
+    if not gpus:
+        gpu_axes[0].text(0.5, 0.5, "No GPU detected", ha='center', va='center', color="white", fontsize=14)
+        if render == True:
+            gpu_axes[0].set_visible(True)
+        plt.draw()
+        return
+
+    for i, gpu in enumerate(gpus):
+        if i >= len(gpu_axes):
+            break  # Don't exceed available axes
+
+        ax = gpu_axes[i]
+        if render == True:
+            ax.set_visible(True)
+        ax.set_facecolor("#1e1e1e")
+
+        # Gather data
+        
+        values = [
+            gpu['load'] if gpu['load'] is not None else 0,
+            gpu['temperature'] if gpu['temperature'] is not None else 0,
+            gpu['memory_used'] if gpu['memory_used'] is not None else 0,
+            gpu['memory_total'] if gpu['memory_total'] is not None else 1  # prevent zero-division
+        ]
+        labels = ['Usage (%)', 'Temp (°C)', f'VRAM Used (MB)\n{values[2]}/{values[3]} MB']
+        # Normalize usage/temperature to percentage-style for bar sizes
+        if values[3] != 0:
+            vram_percent = (values[2] / values[3]) * 100
+        else:
+            vram_percent = 0
+
+        display_values = [values[0], values[1], vram_percent]
+        colors = ['limegreen', 'red', 'cyan']
+
+        bars = ax.bar(labels, display_values, color=colors)
+
+        for bar, val in zip(bars, display_values):
+            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 2,
+                    f"{val:.1f}", ha='center', va='bottom', color="white", fontsize=8)
+
+        ax.set_ylim(0, 110)
+        ax.set_title(gpu['name'], color="white", fontsize=10)
+        ax.tick_params(axis='x', colors='white')
+        ax.tick_params(axis='y', colors='white')
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.spines['left'].set_color("white")
+        ax.spines['bottom'].set_color("white")
+        ax.yaxis.label.set_color("white")
+        ax.xaxis.label.set_color("white")
+
+    plt.draw()
+
+    
+   
+
 
 
 def hide_all():
-    global device_buttons, partition_buttons
+    global device_buttons, partition_buttons, gpu_render, gpu_timer
+
     ax_disk_pie.set_visible(False)
     ax_disk_stats.set_visible(False)
     ax_disk_list.set_visible(False)
@@ -643,27 +866,27 @@ def hide_all():
     ax_processes.set_visible(False)
     hide_process_elements()
     hide_partition_buttons()
-    
+
     for btn in partition_buttons:
         destroy_button(btn)
     partition_buttons.clear()
 
-    # Clear device buttons
     for btn in device_buttons:
         destroy_button(btn)
     device_buttons.clear()
 
-if __name__ == "__main__":
-    manager = multiprocessing.Manager()
-    ram_list = manager.list()
-    cpu_list = manager.list()
-    time_list = manager.list()
+    #Clear GPU screen
+    for ax in gpu_axes:
+        ax.set_visible(False)
+    plt.draw()
+    gpu_render = False
 
-    ram_process = multiprocessing.Process(target=monitor_ram, args=(ram_list, time_list), daemon=True)
-    cpu_process = multiprocessing.Process(target=monitor_cpu, args=(cpu_list, time_list), daemon=True)
-    
-    ram_process.start()
-    cpu_process.start()
+    if gpu_timer:
+        gpu_timer.stop()
+        gpu_timer = None
+
+
+if __name__ == "__main__":
     
     # Setup Matplotlib with dark mode as default
     plt.style.use("dark_background")
@@ -737,9 +960,6 @@ if __name__ == "__main__":
     ax_button6 = plt.axes([.601,.95,.12,.05])
     ax_settings_button = plt.axes([.721, .95, .14, .05])
     theme_button = plt.axes([.861, .95, .138, .05])
-
-    ax_gpu_info = fig.add_axes([0.05, 0.2, 0.9, 0.7])  # Adjust as needed
-    ax_gpu_info.set_visible(False)
     
 
     ax_export_button = plt.axes([0.02, 0.01, 0.14, 0.04])
@@ -766,6 +986,7 @@ if __name__ == "__main__":
     Screen5_button.on_clicked(Screen5)
     Screen6_button.on_clicked(Screen6)
     Settings_button.on_clicked(Settings)
+
     
     toggle_theme(1, current_theme)
     Screen1_button.label.set_color("red")
@@ -774,6 +995,23 @@ if __name__ == "__main__":
     ax_processes = plt.axes([0,0,1,0.95])
     ax_processes.get_xaxis().set_visible(False)
     ax_processes.set_facecolor("#1e1e1e")
+
+    
+   
+
+    gpu_axes = []  # Global list to hold one axes per GPU (max 4 as example)
+
+
+    ram_process.start()
+    cpu_process.start()
+    
+
+    for i in range(gpu_count):  # Assume max 4 GPUs; adjust if needed
+        ax = fig.add_subplot(3, 1, i + 1)
+        ax.set_facecolor("#1e1e1e")
+        ax.set_visible(False)
+        gpu_axes.append(ax)
+
 
     def next_page(event):
         global start_index
