@@ -11,11 +11,17 @@ Required dependencies:
   - Python: 8 or newer
   - tk: 8.6.16 or newer
   - tcl: 8.6.16 or newer
+  - GPUtil: any
     </p>
     
   Python libraries:
   - psutil
   - matplotlib
-  
+  - numpy
+  - multiprocessing
+  - tabulate
+  - threading
+  - platform
+  - datetime
     
     
