@@ -227,13 +227,6 @@ def Screen5(event):
     ax3.set_visible(True)
     ax4.set_visible(True)
     
-# Hardware Screen
-def Screen6(event):
-    global current_screen
-    current_screen = 'Screen6'
-    toggle_theme(event, current_theme)
-    Screen6_button.label.set_color("red")
-    hide_all()
 
 # Settings Screen
 def Settings(event):
@@ -244,9 +237,14 @@ def Settings(event):
     Settings_button.label.set_color("red")
     hide_all()
 
+    theme_button_ax.set_visible(True)
+    ThemeText.set_visible(True)
+
 # Theme toggle button handler (changing themes)
 def toggle_theme(event, target=None):
     global current_theme
+    if current_screen != 'Settings' and target == None:
+        return
     
     if target == "dark":
         current_theme = "light"
@@ -267,10 +265,10 @@ def toggle_theme(event, target=None):
         Screen3_button.color =("gray")
         Screen4_button.color =("gray")
         Screen5_button.color =("gray")
-        Screen6_button.color =("gray")
         Settings_button.color =("gray")
         ram_text.set_color("black")
         cpu_text.set_color("black")
+        ThemeText.set_color("black")
         theme_button.label.set_text("Dark Mode")
         theme_button.label.set_color("white")
         Screen1_button.label.set_color("white")
@@ -278,7 +276,6 @@ def toggle_theme(event, target=None):
         Screen3_button.label.set_color("white")
         Screen4_button.label.set_color("white")
         Screen5_button.label.set_color("white")
-        Screen6_button.label.set_color("white")
         Settings_button.label.set_color("white")
         theme_button.hovercolor="#1e1e1e"
         Screen1_button.hovercolor="#1e1e1e"
@@ -286,7 +283,6 @@ def toggle_theme(event, target=None):
         Screen3_button.hovercolor="#1e1e1e"
         Screen4_button.hovercolor="#1e1e1e"
         Screen5_button.hovercolor="#1e1e1e"
-        Screen6_button.hovercolor="#1e1e1e"
         Settings_button.hovercolor="#1e1e1e"
         
         current_theme = "light"
@@ -333,10 +329,10 @@ def toggle_theme(event, target=None):
         Screen3_button.color=("#1e1e1e")
         Screen4_button.color=("#1e1e1e")
         Screen5_button.color=("#1e1e1e")
-        Screen6_button.color=("#1e1e1e")
         Settings_button.color=("#1e1e1e")
         ram_text.set_color("red")
         cpu_text.set_color("blue")
+        ThemeText.set_color("white")
         theme_button.label.set_text("Light Mode")
         theme_button.label.set_color("white")
         Screen1_button.label.set_color("white")
@@ -344,7 +340,6 @@ def toggle_theme(event, target=None):
         Screen3_button.label.set_color("white")
         Screen4_button.label.set_color("white")
         Screen5_button.label.set_color("white")
-        Screen6_button.label.set_color("white")
         Settings_button.label.set_color("white")
         theme_button.hovercolor="gray"
         Screen1_button.hovercolor="gray"
@@ -352,7 +347,6 @@ def toggle_theme(event, target=None):
         Screen3_button.hovercolor="gray"
         Screen4_button.hovercolor="gray"
         Screen5_button.hovercolor="gray"
-        Screen6_button.hovercolor="gray"
         Settings_button.hovercolor="gray"
         current_theme = "dark"
         ax1.set_ylabel("Usage (%)", color="white")
@@ -637,77 +631,54 @@ def get_nvidia_gpu_stats():
         print(f"Error fetching NVIDIA GPU stats: {e}")
     return gpus
 
-def get_intel_gpu_stats():
-    gpus = []
-
+def get_intel_gpu_usage():
     try:
-        drm_cards = [
-            p for p in os.listdir('/sys/class/drm') if re.match(r'card\d+$', p)
-        ]
+        proc = subprocess.Popen(
+            ['sudo', 'intel_gpu_top', '-J', '-s', '1000'],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True
+        )
 
-        for card in drm_cards:
-            device_path = f"/sys/class/drm/{card}/device"
-            vendor_path = os.path.join(device_path, "vendor")
+        time.sleep(1.0)
 
-            if not os.path.exists(vendor_path):
+        proc.terminate()
+        try:
+            proc.wait(timeout=1)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+
+        output = proc.stdout.read()
+        if not output.strip():
+            print("[Intel GPU] No output captured.")
+            return {}
+
+        # Try to find the first valid JSON line
+        for line in output.splitlines():
+            line = line.strip()
+            if not line:
                 continue
+            try:
+                data = json.loads(line)
+                break  # success
+            except json.JSONDecodeError:
+                continue
+        else:
+            print("[Intel GPU Error] No valid JSON found in output.")
+            return {}
 
-            with open(vendor_path) as f:
-                vendor = f.read().strip()
+        usage = {}
+        for engine in data.get("engines", []):
+            name = engine.get("engine", "unknown")
+            busy = engine.get("busy", 0.0)
+            usage[name] = busy
+        print("RAW OUTPUT:\n", output)
 
-            if vendor != "0x8086":
-                continue  # Not Intel
-
-            print(f"[Intel GPU Detected] {card}")
-
-            name = f"Intel GPU ({card})"
-            temperature = 0.0
-            load = 0.0
-
-            # Temperature
-            temperature = 0.0
-            hwmon_base = os.path.join(device_path, "hwmon")
-            if os.path.exists(hwmon_base):
-                hwmons = os.listdir(hwmon_base)
-                if hwmons:
-                    temp_path = os.path.join(hwmon_base, hwmons[0], "temp1_input")
-                    if os.path.exists(temp_path):
-                        with open(temp_path) as f:
-                            temperature = int(f.read().strip()) / 1000.0
-                    else:
-                        print(f"Temperature file missing: {temp_path}")
-                else:
-                    print(f"No hwmon dirs found in: {hwmon_base}")
-            else:
-                print(f"No hwmon path for Intel GPU: {hwmon_base}")
-
-            # Load (estimated from frequency)
-            load = 0.0
-            cur_freq_path = os.path.join(device_path, "gt_cur_freq_mhz")
-            max_freq_path = os.path.join(device_path, "gt_max_freq_mhz")
-
-            if os.path.exists(cur_freq_path) and os.path.exists(max_freq_path):
-                with open(cur_freq_path) as f:
-                    cur = int(f.read().strip())
-                with open(max_freq_path) as f:
-                    maxf = int(f.read().strip())
-                if maxf > 0:
-                    load = (cur / maxf) * 100
-            else:
-                print("Intel GPU freq paths not found.")
-
-            gpus.append({
-                'name': name,
-                'load': load,
-                'memory_used': 0.0,
-                'memory_total': 0.0,
-                'temperature': temperature
-            })
+        return usage
 
     except Exception as e:
-        print(f"[Intel GPU Stats Error] {e}")
-
-    return gpus
+        print(f"[Intel GPU Error] {e}")
+        return {}
 
 
 def get_amd_gpu_stats():
@@ -751,34 +722,25 @@ def get_amd_gpu_stats():
     return gpus
 
 def get_gpu_info():
-    detected_gpus = []
+    gpus = []
 
-    if system == "Windows":
-        detected_gpus = get_windows_gpus()
-    elif system == "Linux":
-        detected_gpus = get_linux_gpus()
+    # Fetch vendor-specific GPU stats
+    gpus += get_nvidia_gpu_stats()
+    
+    intel_stats = get_intel_gpu_usage()
+    print(get_intel_gpu_usage())
+    if intel_stats:
+        gpus.append({
+            'name': 'Intel GPU',
+            'load': sum(intel_stats.values()) / len(intel_stats) if intel_stats else 0,
+            'memory_used': None,
+            'memory_total': None,
+            'temperature': None
+        })
 
-    nvidia_stats = get_nvidia_gpu_stats()
-    intel_stats = get_intel_gpu_stats()
-    amd_stats = get_amd_gpu_stats()
+    gpus += get_amd_gpu_stats()
 
-    for gpu in detected_gpus:
-        name = gpu['name'].lower()
-
-        if "nvidia" in name or "geforce" in name:
-            match = next((g for g in nvidia_stats if any(part.lower() in name for part in g['name'].split())), None)
-        elif "intel" in name or "uhd" in name:
-            match = next((g for g in intel_stats if any(part.lower() in name for part in g['name'].split())), None)
-        elif "amd" in name or "radeon" in name:
-            match = next((g for g in amd_stats if any(part.lower() in name for part in g['name'].split())), None)
-        else:
-            match = None
-
-        if match:
-            gpu.update(match)
-            print(f"Matched: {gpu['name']} with stats: {match}")
-
-    return detected_gpus
+    return gpus
 
 def update_gpu_display(render):
     gpus = get_gpu_info()
@@ -866,6 +828,8 @@ def hide_all():
     ax_processes.set_visible(False)
     hide_process_elements()
     hide_partition_buttons()
+    theme_button_ax.set_visible(False)
+    ThemeText.set_visible(False)
 
     for btn in partition_buttons:
         destroy_button(btn)
@@ -952,14 +916,14 @@ if __name__ == "__main__":
 
     # Buttons
     
-    ax_button1 = plt.axes([0, .95, .12, .05])
-    ax_button2 = plt.axes([.121, .95, .12, .05])  
-    ax_button3 = plt.axes([.241, .95, .12, .05])
-    ax_button4 = plt.axes([.361,.95,.12,.05])   
-    ax_button5 = plt.axes([.481,.95,.12,.05])
-    ax_button6 = plt.axes([.601,.95,.12,.05])
-    ax_settings_button = plt.axes([.721, .95, .14, .05])
-    theme_button = plt.axes([.861, .95, .138, .05])
+    ax_button1 = plt.axes([0, .95, .16, .05])
+    ax_button2 = plt.axes([.161, .95, .16, .05])  
+    ax_button3 = plt.axes([.322, .95, .16, .05])
+    ax_button4 = plt.axes([.483,.95,.16,.05])   
+    ax_button5 = plt.axes([.644,.95,.16,.05])
+    ax_settings_button = plt.axes([.805, .95, .194, .05])
+    theme_button_ax = plt.axes([.12, .76, .160, .1])
+    theme_button_ax.set_visible(False)
     
 
     ax_export_button = plt.axes([0.02, 0.01, 0.14, 0.04])
@@ -968,13 +932,12 @@ if __name__ == "__main__":
     status_text = ax_export_button.figure.text(0.18, 0.025, "", fontsize=9, color="green")
 
 
-    theme_button = Button(theme_button, "Light Mode", color="#1e1e1e")
+    theme_button = Button(theme_button_ax, "Light Mode", color="#1e1e1e")
     Screen1_button = Button(ax_button1, "Monitor", color=("#1e1e1e"))
     Screen2_button = Button(ax_button2, "Processes", color=("#1e1e1e"))
     Screen3_button = Button(ax_button3, "Disk", color=("#1e1e1e"))
     Screen4_button = Button(ax_button4, "GPU", color=("#1e1e1e"))
     Screen5_button = Button(ax_button5, "Statistics", color=("#1e1e1e"))
-    Screen6_button = Button(ax_button6, "Hardware", color=("#1e1e1e"))
     Settings_button = Button(ax_settings_button, "Settings", color=("#1e1e1e"))
     
     # Event Handling
@@ -984,8 +947,10 @@ if __name__ == "__main__":
     Screen3_button.on_clicked(Screen3)
     Screen4_button.on_clicked(Screen4)
     Screen5_button.on_clicked(Screen5)
-    Screen6_button.on_clicked(Screen6)
     Settings_button.on_clicked(Settings)
+
+    ThemeText = fig.text(.05,.8, "Theme: ")
+    ThemeText.set_visible(False)
 
     
     toggle_theme(1, current_theme)
@@ -999,14 +964,14 @@ if __name__ == "__main__":
     
    
 
-    gpu_axes = []  # Global list to hold one axes per GPU (max 4 as example)
+    gpu_axes = []  # Global list to hold one axes per GPU
 
 
     ram_process.start()
     cpu_process.start()
     
 
-    for i in range(gpu_count):  # Assume max 4 GPUs; adjust if needed
+    for i in range(gpu_count):  
         ax = fig.add_subplot(3, 1, i + 1)
         ax.set_facecolor("#1e1e1e")
         ax.set_visible(False)
@@ -1028,7 +993,6 @@ if __name__ == "__main__":
     def update_display():
         global text_objects, kill_buttons
 
-        # Clear previous text and buttons
         for txt in text_objects:
             txt.remove()
         text_objects = []
@@ -1162,7 +1126,7 @@ if __name__ == "__main__":
             ax3,
             ax4
         ),
-        interval=200,  # Refresh every 200ms
+        interval=200,  
         blit=False,
         save_count=20
     )
