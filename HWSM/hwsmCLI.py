@@ -36,7 +36,7 @@ def print_help():
                  "  -help   Show this help message\n")
     print("+---------------- Help ----------------+")
     print(help_text)
-    print("+-------------------------------------+")
+    print("+-------------------------------------+\n")
 
 def get_size(num_bytes, suffix="B"):
     factor = 1024
@@ -56,7 +56,7 @@ def print_cpu():
     print("| Usage per core:")
     for i, u in enumerate(usage): print(f"|   Core {i:<2}: {u}%")
     print(f"| Total usage    : {psutil.cpu_percent()}%")
-    print("+----------------------------------------+")
+    print("+----------------------------------------+\n")
 
 def print_mem():
     vm = psutil.virtual_memory(); sm = psutil.swap_memory()
@@ -69,31 +69,56 @@ def print_mem():
     print(f"| Used Swap        : {get_size(sm.used)}")
     print(f"| Free Swap        : {get_size(sm.free)}")
     print(f"| Swap Usage       : {sm.percent}%")
-    print("+----------------------------------------+")
+    print("+----------------------------------------+\n")
 
 def print_disk():
     print("+---------------- Disk Info ----------------+")
-    for p in psutil.disk_partitions():
-        print(f"| Device: {p.device} mounted on {p.mountpoint} ({p.fstype})")
+    partitions = psutil.disk_partitions()
+    for p in partitions:
+        print(f"| Device: {p.device}")
+        print(f"|   Mountpoint : {p.mountpoint}")
+        print(f"|   File System: {p.fstype}")
         try:
-            us = psutil.disk_usage(p.mountpoint)
-            print(f"|   Total: {get_size(us.total)} Used: {get_size(us.used)} Free: {get_size(us.free)} ({us.percent}%)")
-        except PermissionError: print("|   [Permission Denied]")
-    print("+------------------------------------------+")
+            usage = psutil.disk_usage(p.mountpoint)
+            print(f"|   Total Size : {get_size(usage.total)}")
+            print(f"|   Used       : {get_size(usage.used)}")
+            print(f"|   Free       : {get_size(usage.free)}")
+            print(f"|   Usage      : {usage.percent}%")
+        except PermissionError:
+            print("|   [Permission Denied]")
+        print("|")
+    print("+------------------------------------------+\n")
 
 def print_io():
+    io = psutil.disk_io_counters(perdisk=True)
     print("+----------------- Disk I/O -----------------+")
-    for d, s in psutil.disk_io_counters(perdisk=True).items():
-        print(f"| {d}: Read {get_size(s.read_bytes)} ({s.read_count}), Write {get_size(s.write_bytes)} ({s.write_count})")
-    print("+-------------------------------------------+")
+    for disk, stats in io.items():
+        print(f"| Disk: {disk}")
+        print(f"|   Read Count     : {stats.read_count}")
+        print(f"|   Write Count    : {stats.write_count}")
+        print(f"|   Read Bytes     : {get_size(stats.read_bytes)}")
+        print(f"|   Write Bytes    : {get_size(stats.write_bytes)}")
+        print(f"|   Read Time (ms) : {stats.read_time}")
+        print(f"|   Write Time (ms): {stats.write_time}")
+        print("|")
+    print("+-------------------------------------------+\n")
 
 def print_net():
     print("+----------------- Network Info -----------------+")
-    try: ip = socket.gethostbyname(socket.gethostname()); print(f"| Host: {socket.gethostname()} IP: {ip}")
-    except: print("| Host/IP: N/A")
-    for iface, s in psutil.net_io_counters(pernic=True).items():
-        print(f"| {iface}: Sent {get_size(s.bytes_sent)} Recv {get_size(s.bytes_recv)}")
-    print("+------------------------------------------------+")
+    hostname = socket.gethostname()
+    try:
+        ip = socket.gethostbyname(hostname)
+        print(f"| Hostname       : {hostname}")
+        print(f"| IP Address     : {ip}")
+    except socket.gaierror:
+        print("| IP Address     : [Unavailable]")
+    net_io = psutil.net_io_counters(pernic=True)
+    for iface, stats in net_io.items():
+        print(f"| Interface: {iface}")
+        print(f"|   Bytes Sent    : {get_size(stats.bytes_sent)}")
+        print(f"|   Bytes Received: {get_size(stats.bytes_recv)}")
+        print("|")
+    print("+------------------------------------------------+\n")
 
 # GPU section
 
@@ -178,14 +203,18 @@ def print_gpu():
             for k in ["Product","Vendor","Bus","Config","Usage","Temperature"]:
                 print(f"|   {k:<12}: {g.get(k,'N/A')}")
             print("|")
-    print("+-------------------------------------------+")
+    print("+-------------------------------------------+\n")
 
 def print_sys():
-    u=platform.uname()
     print("+----------------- System Info -----------------+")
-    print(f"| {u.system} {u.release} ({u.version}) {u.machine}")
-    print(f"| Node: {u.node} Processor: {u.processor}")
-    print("+------------------------------------------------+")
+    uname = platform.uname()
+    print(f"| System       : {uname.system}")
+    print(f"| Node Name    : {uname.node}")
+    print(f"| Release      : {uname.release}")
+    print(f"| Version      : {uname.version}")
+    print(f"| Machine      : {uname.machine}")
+    print(f"| Processor    : {uname.processor}")
+    print("+------------------------------------------------+\n")
 
 def main():
     ops={'-cpu':print_cpu,'-mem':print_mem,'-disk':print_disk,'-io':print_io,
