@@ -7,8 +7,9 @@ Usage:
   ./hwsmCLI -disk   # Disk and partition stats
   ./hwsmCLI -io     # Disk I/O stats
   ./hwsmCLI -gpu    # GPU stats
-  ./hwsmCLI -net    # Network I/O stats
-  ./hwsmCLI -all    # CPU, Memory, Disk, I/O, Network, and GPU stats
+  ./hwsmCLI -net    # Network stats (IP address, interface data)
+  ./hwsmCLI -sys    # System info (OS, kernel, architecture)
+  ./hwsmCLI -all    # All above statistics
   ./hwsmCLI -help   # Show this help message
 If no parameters provided, shows help.
 """
@@ -18,6 +19,8 @@ import platform
 import subprocess
 import shutil
 import re
+import socket
+import os
 
 def print_help():
     help_text = ("Usage: ./hwsmCLI [option]\n"
@@ -26,41 +29,42 @@ def print_help():
                  "  -mem    Show memory statistics (total, used, free, swap)\n"
                  "  -disk   Show disk and partition statistics\n"
                  "  -io     Show disk I/O statistics\n"
-                 "  -net    Show network I/O statistics\n"
                  "  -gpu    Show GPU statistics\n"
-                 "  -all    Show CPU, memory, disk, I/O, network, and GPU statistics\n"
+                 "  -net    Show network statistics (IP address, interfaces)\n"
+                 "  -sys    Show system information (OS, kernel, architecture)\n"
+                 "  -all    Show CPU, memory, disk, I/O, Net, GPU, system info\n"
                  "  -help   Show this help message\n")
     print("+---------------- Help ----------------+")
     print(help_text)
     print("+-------------------------------------+")
 
-def print_cpu():
-    processor_info = platform.processor() or platform.uname().processor
-    physical = psutil.cpu_count(logical=False)
-    logical = psutil.cpu_count(logical=True)
-    per_core = psutil.cpu_percent(percpu=True, interval=1)
-    total_cpu = psutil.cpu_percent()
+def get_size(num_bytes, suffix="B"):
+    factor = 1024
+    for unit in ["","K","M","G","T","P"]:
+        if num_bytes < factor:
+            return f"{num_bytes:.2f}{unit}{suffix}"
+        num_bytes /= factor
+    return f"{num_bytes:.2f}Y{suffix}"
 
+def print_cpu():
+    proc = platform.processor() or platform.uname().processor
     print("+--------------- CPU Info ---------------+")
-    print(f"| Vendor/Model     : {processor_info}")
-    print(f"| Physical cores   : {physical}")
-    print(f"| Total cores      : {logical}")
-    print("| CPU Usage Per Core:")
-    for i, percentage in enumerate(per_core):
-        print(f"|   Core {i:<2}         : {percentage}%")
-    print(f"| Total CPU Usage  : {total_cpu}%")
+    print(f"| Vendor/Model   : {proc}")
+    print(f"| Physical cores : {psutil.cpu_count(logical=False)}")
+    print(f"| Total cores    : {psutil.cpu_count(logical=True)}")
+    usage = psutil.cpu_percent(percpu=True, interval=1)
+    print("| Usage per core:")
+    for i, u in enumerate(usage): print(f"|   Core {i:<2}: {u}%")
+    print(f"| Total usage    : {psutil.cpu_percent()}%")
     print("+----------------------------------------+")
 
 def print_mem():
-    vm = psutil.virtual_memory()
-    sm = psutil.swap_memory()
-
+    vm = psutil.virtual_memory(); sm = psutil.swap_memory()
     print("+--------------- Memory Info ------------+")
     print(f"| Total Memory     : {get_size(vm.total)}")
     print(f"| Used Memory      : {get_size(vm.used)}")
     print(f"| Available Memory : {get_size(vm.available)}")
-    print(f"| Memory Usage     : {vm.percent}%")
-    print("|")
+    print(f"| Usage            : {vm.percent}%")
     print(f"| Total Swap       : {get_size(sm.total)}")
     print(f"| Used Swap        : {get_size(sm.used)}")
     print(f"| Free Swap        : {get_size(sm.free)}")
@@ -69,128 +73,127 @@ def print_mem():
 
 def print_disk():
     print("+---------------- Disk Info ----------------+")
-    partitions = psutil.disk_partitions()
-    for p in partitions:
-        print(f"| Device: {p.device}")
-        print(f"|   Mountpoint : {p.mountpoint}")
-        print(f"|   File System: {p.fstype}")
+    for p in psutil.disk_partitions():
+        print(f"| Device: {p.device} mounted on {p.mountpoint} ({p.fstype})")
         try:
-            usage = psutil.disk_usage(p.mountpoint)
-            print(f"|   Total Size : {get_size(usage.total)}")
-            print(f"|   Used       : {get_size(usage.used)}")
-            print(f"|   Free       : {get_size(usage.free)}")
-            print(f"|   Usage      : {usage.percent}%")
-        except PermissionError:
-            print("|   [Permission Denied]")
-        print("|")
+            us = psutil.disk_usage(p.mountpoint)
+            print(f"|   Total: {get_size(us.total)} Used: {get_size(us.used)} Free: {get_size(us.free)} ({us.percent}%)")
+        except PermissionError: print("|   [Permission Denied]")
     print("+------------------------------------------+")
 
 def print_io():
-    io = psutil.disk_io_counters(perdisk=True)
     print("+----------------- Disk I/O -----------------+")
-    for disk, stats in io.items():
-        print(f"| Disk: {disk}")
-        print(f"|   Read Count     : {stats.read_count}")
-        print(f"|   Write Count    : {stats.write_count}")
-        print(f"|   Read Bytes     : {get_size(stats.read_bytes)}")
-        print(f"|   Write Bytes    : {get_size(stats.write_bytes)}")
-        print(f"|   Read Time (ms) : {stats.read_time}")
-        print(f"|   Write Time (ms): {stats.write_time}")
-        print("|")
+    for d, s in psutil.disk_io_counters(perdisk=True).items():
+        print(f"| {d}: Read {get_size(s.read_bytes)} ({s.read_count}), Write {get_size(s.write_bytes)} ({s.write_count})")
     print("+-------------------------------------------+")
 
 def print_net():
-    net_io = psutil.net_io_counters(pernic=True)
-    print("+---------------- Network I/O ----------------+")
-    for nic, stats in net_io.items():
-        print(f"| Interface: {nic}")
-        print(f"|   Bytes Sent    : {get_size(stats.bytes_sent)}")
-        print(f"|   Bytes Received: {get_size(stats.bytes_recv)}")
-        print(f"|   Packets Sent  : {stats.packets_sent}")
-        print(f"|   Packets Recv  : {stats.packets_recv}")
-        print("|")
-    print("+--------------------------------------------+")
+    print("+----------------- Network Info -----------------+")
+    try: ip = socket.gethostbyname(socket.gethostname()); print(f"| Host: {socket.gethostname()} IP: {ip}")
+    except: print("| Host/IP: N/A")
+    for iface, s in psutil.net_io_counters(pernic=True).items():
+        print(f"| {iface}: Sent {get_size(s.bytes_sent)} Recv {get_size(s.bytes_recv)}")
+    print("+------------------------------------------------+")
 
-def parse_lshw_output(output):
-    gpus = []
-    blocks = re.split(r'\*-display', output)
-    for block in blocks:
-        lines = block.strip().split('\n')
-        gpu = {}
-        for line in lines:
-            line = line.strip()
-            if line.startswith("product:"):
-                gpu['Product'] = line.split("product:")[1].strip()
-            elif line.startswith("vendor:"):
-                gpu['Vendor'] = line.split("vendor:")[1].strip()
-            elif line.startswith("configuration:"):
-                gpu['Config'] = line.split("configuration:")[1].strip()
-            elif line.startswith("bus info:"):
-                gpu['Bus'] = line.split("bus info:")[1].strip()
-        if gpu:
-            gpus.append(gpu)
-    return gpus
+# GPU section
+
+def get_nvidia_info():
+    nv=[]
+    if shutil.which("nvidia-smi"):
+        out=subprocess.check_output([
+            "nvidia-smi","--query-gpu=index,name,utilization.gpu,temperature.gpu,pci.bus_id",
+            "--format=csv,noheader,nounits"],universal_newlines=True)
+        for l in out.strip().splitlines():
+            idx,name,u,t,b=l.split(',')
+            nv.append({"Bus":b.strip(),"Product":name.strip(),"Vendor":"NVIDIA","Usage":u.strip()+"%","Temperature":t.strip()+"°C"})
+    return nv
+
+def get_intel_gpu_info():
+    intel_gpu = {
+        'Usage': 'N/A',
+        'Temperature': 'N/A'
+    }
+    try:
+        # Try intel_gpu_top for live usage
+        if shutil.which("intel_gpu_top"):
+            proc = subprocess.Popen(["intel_gpu_top", "-J", "-s", "200", "-n", "1"], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+            out, _ = proc.communicate(timeout=2)
+            match = re.search(r'"busy":\s*(\d+)', out.decode())
+            if match:
+                intel_gpu['Usage'] = match.group(1) + '%'
+    except Exception:
+        pass
+
+    # Try reading temp from /sys/class/drm/card0/device/hwmon/.../temp*_input
+    try:
+        hwmon_path = "/sys/class/drm/card0/device/hwmon"
+        if os.path.isdir(hwmon_path):
+            for d in os.listdir(hwmon_path):
+                tpath = os.path.join(hwmon_path, d, "temp1_input")
+                if os.path.isfile(tpath):
+                    with open(tpath) as f:
+                        val = int(f.read().strip())
+                        intel_gpu['Temperature'] = f"{val / 1000:.1f}°C"
+                        break
+    except Exception:
+        pass
+
+    return intel_gpu
+
+def parse_lshw_output():
+    hw=[]
+    if shutil.which("lshw"):
+        try: out=subprocess.check_output(["lshw","-C","display"],universal_newlines=True)
+        except: return hw
+        for blk in re.split(r'\*-display',out):
+            info={}
+            for ln in blk.splitlines():
+                ln=ln.strip()
+                if ln.startswith("bus info:"): info["Bus"]=ln.split("bus info:")[1].strip()
+                if ln.startswith("product:"): info["Product"]=ln.split("product:")[1].strip()
+                if ln.startswith("vendor:"): info["Vendor"]=ln.split("vendor:")[1].strip()
+                if ln.startswith("configuration:"): info["Config"]=ln.split("configuration:")[1].strip()
+            if info and not re.search(r'nvidia',info.get('Vendor',''),re.I): hw.append(info)
+    return hw
 
 def print_gpu():
     print("+----------------- GPU Info -----------------+")
-    if shutil.which("lshw") is None:
-        print("| 'lshw' utility is not installed. Please install it to use GPU stats.")
-        print("+-------------------------------------------+")
-        return
-
-    try:
-        output = subprocess.check_output(["lshw", "-C", "display"], universal_newlines=True)
-        gpus = parse_lshw_output(output)
-        if not gpus:
-            print("| No GPUs detected.")
-        for i, gpu in enumerate(gpus):
-            print(f"| GPU {i + 1}:")
-            for key, value in gpu.items():
-                print(f"|   {key:<10}: {value}")
+    nv=get_nvidia_info(); hw=parse_lshw_output(); intel_info = get_intel_gpu_info()
+    buses={g['Bus'] for g in nv}
+    for h in hw:
+        if h.get('Bus') in buses:
+            for g in nv:
+                if g['Bus']==h['Bus']:
+                    g.update({k:v for k,v in h.items() if k not in g})
+                    break
+        else:
+            h.setdefault('Usage','N/A'); h.setdefault('Temperature','N/A')
+            if 'Intel' in h.get('Vendor',''):
+                h.update(intel_info)
+            nv.append(h)
+    if not nv: print("| No GPUs found.")
+    else:
+        for i,g in enumerate(nv,1):
+            print(f"| GPU {i}:")
+            for k in ["Product","Vendor","Bus","Config","Usage","Temperature"]:
+                print(f"|   {k:<12}: {g.get(k,'N/A')}")
             print("|")
-    except subprocess.CalledProcessError:
-        print("| Failed to retrieve GPU information.")
     print("+-------------------------------------------+")
 
-def get_size(bytes, suffix="B"):
-    factor = 1024
-    for unit in ["", "K", "M", "G", "T", "P"]:
-        if bytes < factor:
-            return f"{bytes:.2f}{unit}{suffix}"
-        bytes /= factor
-    return f"{bytes:.2f}Y{suffix}"
+def print_sys():
+    u=platform.uname()
+    print("+----------------- System Info -----------------+")
+    print(f"| {u.system} {u.release} ({u.version}) {u.machine}")
+    print(f"| Node: {u.node} Processor: {u.processor}")
+    print("+------------------------------------------------+")
 
 def main():
-    if len(sys.argv) < 2:
-        print_help()
-        sys.exit(0)
+    ops={'-cpu':print_cpu,'-mem':print_mem,'-disk':print_disk,'-io':print_io,
+         '-net':print_net,'-gpu':print_gpu,'-sys':print_sys,'-help':print_help}
+    if len(sys.argv)<2: print_help(); sys.exit()
+    cmd=sys.argv[1].lower()
+    if cmd=='-all': print_help(); [f() for _,f in ops.items() if _!='-help']; print_gpu(); print_sys()
+    elif cmd in ops: ops[cmd]()
+    else: print(f"Unknown option: {cmd}"); print_help()
 
-    arg = sys.argv[1].lower()
-    if arg == '-cpu':
-        print_cpu()
-    elif arg == '-mem':
-        print_mem()
-    elif arg == '-disk':
-        print_disk()
-    elif arg == '-io':
-        print_io()
-    elif arg == '-net':
-        print_net()
-    elif arg == '-gpu':
-        print_gpu()
-    elif arg == '-all':
-        print_cpu()
-        print_mem()
-        print_disk()
-        print_io()
-        print_net()
-        print_gpu()
-    elif arg == '-help':
-        print_help()
-    else:
-        print(f"Unknown option: {arg}\n")
-        print_help()
-        sys.exit(1)
-
-if __name__ == '__main__':
-    main()
+if __name__=='__main__': main()
