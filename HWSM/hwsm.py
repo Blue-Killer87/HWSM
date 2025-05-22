@@ -1,5 +1,9 @@
 #!/bin/python3
 
+# Disclaimer:
+# All comments, variables, function names, etc. are in english. This is mostly for the function of universality and global access for anyone outside of Czechia. 
+# All code is made by me, except for GPU screen logic, which was partially constructed by OpenAI's chatGPT, as these functions are hard to replicate in python and above the knowledge of a mortal
+
 import psutil
 import GPUtil
 import time
@@ -20,23 +24,23 @@ import re
 import json
 import platform
 
-system = platform.system()
+system = platform.system() 
 
 
 
-# Default Theme
+# Default Theme and Screen
 current_theme = "dark"
 current_screen = 'Screen1'
 
-plt.rcParams['toolbar'] = 'None'
-i = 6
+plt.rcParams['toolbar'] = 'None' # Gets rid of the default toolbar in Matplotlib (Taken from documentation)
+
 # Parameters
-ram_total = psutil.virtual_memory().total / (1024**3)
-LINES_PER_PAGE = 50
-start_index = 0
+ram_total = psutil.virtual_memory().total / (1024**3) # Total amount of RAM memory on the system (Used as a limit for the graph)
+LINES_PER_PAGE = 50 # Parameter to make sure processes fit on one page
+start_index = 0 
 
 
-# GUI state tracking
+# GUI state tracking, default init of variables
 proc_list = []
 start_index = 0
 displayed_rows = 15
@@ -45,6 +49,7 @@ kill_buttons = []
 partition_buttons = []     
 device_buttons = []
 current_device = None
+system_device = None
 nav_buttons = {}
 gpu_count = 3
 gpu_render = False
@@ -57,141 +62,171 @@ time_list = manager.list()
 
 
 
-
 # Daemon to measure ram
 def monitor_ram(ram_list, time_list):
-    while True:
-        ram_usage = psutil.virtual_memory().used / (1024 ** 3)  # Convert to GB
-        ram_list.append(ram_usage)
-        time_list.append(len(time_list))  # Use time index
-        time.sleep(0.2)
+    '''Appends current values to ram_list every 200ms (also updates timestamp list)'''
+    while True: 
+        ram_usage = psutil.virtual_memory().used / (1024 ** 3)  # Gets current RAM usages and converts it to GB
+        ram_list.append(ram_usage)                              # Adds the current Usage to the list
+        time_list.append(len(time_list))                        # Adds timestamp as the lenght of the entire time_list (easiest solution to increment, no additional variable needed)
+        time.sleep(0.2)                                         # Waits for 200ms, then repeats
 
 # Daemon to measure cpu
 def monitor_cpu(cpu_list, time_list):
+    '''Appends current values to cpu_list every 200ms (Note: we're using one time_list for both graphs, so no need to update time_list here as well)'''
     while True:
-        cpu_usage = psutil.cpu_percent(interval=0.05)  # Get CPU usage in %
-        cpu_list.append(cpu_usage)
-        time.sleep(0.15)
+        cpu_usage = psutil.cpu_percent(interval=0.05)  # Gets current CPU usage in %
+        cpu_list.append(cpu_usage)                     # Adds the current CPU usage to the cpu_list
+        time.sleep(0.15)                               # Waits for 150ms, then repeats (not same wait as for RAM, to avoid synchronizing issues)
 
 
+# Creation of processes for both daemons (the switch "daemon" will launch the process with no console)
+ram_process = multiprocessing.Process(target=monitor_ram, args=(ram_list, time_list), daemon=True) # Creates a process with routine of monitor_ram and given arguments to call with
+cpu_process = multiprocessing.Process(target=monitor_cpu, args=(cpu_list, time_list), daemon=True) # Creates a process with routine of monitor_cpu and given arguments to call with
 
-ram_process = multiprocessing.Process(target=monitor_ram, args=(ram_list, time_list), daemon=True)
-cpu_process = multiprocessing.Process(target=monitor_cpu, args=(cpu_list, time_list), daemon=True)
+
 
 def update_chart(frame, time_list, ram_list, cpu_list, ram_line, cpu_line, total_cpu_line, total_ram_line, ram_text, cpu_text, ax1, ax2, ax3, ax4):
-    if not ram_list or not cpu_list:
-        
-        return ram_line, cpu_line, total_cpu_line, total_ram_line, ram_text, cpu_text, total_cpu_text
+    # Main function to re-render the RAM and CPU graphs
+    # It looks a bit complicated, but essentially it just takes the updated lists, reads the last value and add it to the graph
+
+    # We need to make sure we won't work with None types
+    if not ram_list or not cpu_list:    
+        return ram_line, cpu_line, total_cpu_line, total_ram_line, ram_text, cpu_text, total_cpu_text # Initialize if they weren't yet created (first iteration)
+
     min_len = min(len(time_list), len(ram_list), len(cpu_list))
     time_values = np.array(time_list[:min_len])
     ram_values = np.array(ram_list[:min_len])
     cpu_values = np.array(cpu_list[:min_len])
 
     # Update data
-    ram_line.set_data(time_values, ram_values)
-    cpu_line.set_data(time_values, cpu_values)
-    total_cpu_line.set_data(time_values, cpu_values)
-    total_ram_line.set_data(time_values, ram_values)
+    ram_line.set_data(time_values, ram_values) # Draw line to current RAM value and current timestamp
+    cpu_line.set_data(time_values, cpu_values) # The same for CPU
+    
+    total_ram_line.set_data(time_values, ram_values) # Draw the line to the overall (all-time) graph as well
+    total_cpu_line.set_data(time_values, cpu_values) # The same for CPU
 
-    # Update latest text
+    # Update labels with latest usage
     ram_text.set_text(f"Latest RAM Usage: {ram_values[-1]:.2f} GB")
     cpu_text.set_text(f"Latest CPU Usage: {cpu_values[-1]:.2f}%")
 
-    i = time_values[-1]
-    if i < 100: 
+    # Set new dynamic limits (makes it so the graph moves with the data)
+
+    i = time_values[-1] # Take the current time (latest appended time)
+    if i < 100:         # If the time value didn't reach 100 iterations, we'll just keep the start at 0, to start with some data
         ax1.set_xlim(0, 100)
         ax2.set_xlim(0, 100)
         ax3.set_xlim(0, 100)
         ax4.set_xlim(0, 100)
-    else:
+    else:               # When the time exceeds 100, we'll dynamically shift the limit by 1 to the right, moving the entire graph, keeping only 100 iterations visible
         ax1.set_xlim(i-100, i+1)
         ax2.set_xlim(i-100, i+1)
         ax3.set_xlim(0, i)
         ax4.set_xlim(0, i)
         
+    # Return values for further use
     return ram_line, cpu_line, total_cpu_line, total_ram_line, ram_text, cpu_text, ax1, ax2, ax3, ax4
 
 # Screen handling
+# Screens are essentially just functions that toggle on/off certain features to only keep the relevant activated
+
 # Monitor Screen
 def Screen1(event):
-    global current_screen
-    current_screen = 'Screen1'
-    toggle_theme(event, current_theme)
-    Screen1_button.label.set_color("red")
-    hide_all()
-    ax1.set_visible(True)
-    ax2.set_visible(True)
+    #General Screen Template (Default settings for the screen)
+    #----------------------------------
+    global current_screen                   # Loads Global variables (some screens use more)
+    current_screen = 'Screen1'              # Changes value of current_screen so we can keep track of where we are
+    toggle_theme(event, current_theme)      # Re-draws theme (will keep current theme) - This is done to remove the highlighted buttons or any other graphical elements toggled 
+    Screen1_button.label.set_color("red")   # Highlights the current screen button for easier navigation
+    hide_all()                              # Call's function to clear ALL elements. This will leave us with a blank screen so we can toggle what we want to have on the page
+    #-----------------------------------
+
+    ax1.set_visible(True) # RAM grapph
+    ax2.set_visible(True) # CPU graph
 
 # Processes Screen
 def Screen2(event):
-    global current_screen, proc_list, start_index
+    global current_screen, proc_list, start_index   # See? More global variables as I promised
     current_screen = 'Screen2'
     hide_process_elements()
     toggle_theme(event, current_theme)
     Screen2_button.label.set_color("red")
     hide_all()
-    ax_processes.set_visible(True)
 
-    proc_list = []
-    for i in psutil.process_iter():
-        try:
-            proc = [i.pid, i.name(), i.status(), i.exe()]
-            proc_list.append(proc)
+    ax_processes.set_visible(True)      # Process table
+
+    proc_list = []                      # helping variable
+    
+    # Lists found processes into the table (can take a moment if too many processes are active) 
+    for i in psutil.process_iter():     
+        try:                                                # It's in try/except as the reading process can fail due to insufficient permissions
+            proc = [i.pid, i.name(), i.status(), i.exe()]   # returns process PID, name, status (sleeping, running...) and executable path
+            proc_list.append(proc)                          # Appends the process structure from above into the list of processes
         except:
             continue
 
     start_index = 0
-    ax_next_button.set_visible(True)
-    ax_prev_button.set_visible(True)
-    update_display()
+    ax_next_button.set_visible(True)        # Button to switch to next page
+    ax_prev_button.set_visible(True)        # Button to switch to previous page
+    update_display()                        # Updates the drawn display
 
-
+# Disk screen (2nd most complex)
 def Screen3(event):
-    global current_screen, device_buttons, partition_buttons, current_device
+    global current_screen, device_buttons, partition_buttons, current_device, system_device
     current_screen = 'Screen3'
     toggle_theme(event, current_theme)
     Screen3_button.label.set_color("red")
-   
     hide_all()
+
+    # Shows disk graphs and list (main screen objects)
     ax_disk_pie.set_visible(True)
     ax_disk_stats.set_visible(True)
     ax_disk_list.set_visible(True)
 
-    device_buttons.clear()
-    partition_buttons.clear()
+    # Makes sure no buttons are left when we start (so we don't overwrite them)
+    try:
+        device_buttons.clear()
+        partition_buttons.clear()
+    except:
+        pass
 
-    device_map = group_physical_partitions_by_device()
-    devices = list(device_map.keys())
-    # Detect root partition's base device
-    root_partition = next((p for p in psutil.disk_partitions(all=True) if p.mountpoint == "/"), None)
-    if root_partition:
-        system_device = os.path.basename(root_partition.device.split('p')[0])  # For nvmeXn1pY
-        if system_device not in devices:  # fallback if using lsblk which may have different names
-            system_device = next((d for d in devices if system_device in d), devices[0])
-    else:
-        system_device = devices[0]  # Fallback
+    device_map = group_physical_partitions_by_device()       # Creates a list with key a values (Disk:Partions)
+    devices = list(device_map.keys())                        # Gets the physical disk layout (entire drives like nvme, sda...)
 
-    current_device = system_device
+    # Detect root partition's base device (Gets our main partition)
+    if current_device == None:
+        root_partition = next((p for p in psutil.disk_partitions(all=True) if p.mountpoint == "/"), None)       # Looks for root, marked by / on linux
+        if root_partition:                                                                                      # If we found root partition, set it into "system_device"
+            system_device = os.path.basename(root_partition.device.split('p')[0])                               # For nvmeXn1pY
+            if system_device not in devices:                                                                    # fallback if using lsblk which may have different names
+                system_device = next((d for d in devices if system_device in d), devices[0])
+        else:
+            system_device = devices[0]                                                                          # Fallback
+
+    current_device = system_device          # Set system_device as a first device to show
 
     # Create Device Buttons
     Screen3.device_button_axes = []
     Screen3.device_buttons = []
     
-    for i, device in enumerate(devices):
+    # Create buttons according to found devices
+    for i, device in enumerate(devices):  
+        # Button placement/number/styling
         x0 = 0.02 + i * (0.96 / len(devices))
         width = 0.94 / len(devices)
         ax = fig.add_axes([x0, 0.91, width, 0.035])
         btn = Button(ax, device, color="#2a2a2a")
         
+        #Button function (when clicked, switch device and highlight the button)
         btn.on_clicked(lambda event, dev=device, b=btn: (highlight_device_button(dev), on_device_select(dev)))
-        Screen3.device_button_axes.append(ax)
-        Screen3.device_buttons.append(btn)
-        device_buttons.append(btn)
+        Screen3.device_button_axes.append(ax)   # Appends the axes in a list to keep track of it
+        Screen3.device_buttons.append(btn)      # Appends the button structure into a list to keep track of it
+        device_buttons.append(btn)              # Also a redundand second list for other features such as deletion (sepperate for safety reasons)
 
     # Initially select first device
     on_device_select(current_device)
 
-# GPU Screen
+# GPU Screen (The most complex one)
 def Screen4(event):
     global current_screen, gpu_render, gpu_timer
     current_screen = 'Screen4'
@@ -216,29 +251,30 @@ def Screen4(event):
 
     
 
-# Statistics Screen
+# Statistics Screen (Shows collected RAM and CPU data since the app launch, probably will add features in the future)
 def Screen5(event):
     global current_screen
     current_screen = 'Screen5'
-    #Screen with total data  
     toggle_theme(event, current_theme)
     Screen5_button.label.set_color("red")
     hide_all()
-    ax3.set_visible(True)
-    ax4.set_visible(True)
+
+    ax3.set_visible(True) # Total CPU graph 
+    ax4.set_visible(True) # Total RAM graph
     
 
-# Settings Screen
+# Settings Screen (Still missing features but it's not core important)
 def Settings(event):
     global current_screen
     current_screen = 'Settings'
-    # Not sure what this will contain yet
     toggle_theme(event, current_theme)
     Settings_button.label.set_color("red")
     hide_all()
 
+    # Shows the theme button
     theme_button_ax.set_visible(True)
-    ThemeText.set_visible(True)
+    ThemeText.set_visible(True)     # Label for the button
+
 
 # Theme toggle button handler (changing themes)
 def toggle_theme(event, target=None):
@@ -381,13 +417,15 @@ def toggle_theme(event, target=None):
     fig.canvas.draw_idle()
 
 
+# Function to export the RAM and CPU data into a machine and human readable format
 def export_data(event):
+    # If there are no data -> nothing to export
     if len(time_list) == 0 or len(ram_list) == 0 or len(cpu_list) == 0:
         print("No data to export.")
         return
 
 
-    # Use NumPy arrays
+    # Use NumPy arrays to store values 
     min_len = min(len(time_list), len(ram_list), len(cpu_list))
     time_vals = np.array(time_list[:min_len])
     ram_vals = np.array(ram_list[:min_len])
@@ -405,19 +443,21 @@ def export_data(event):
     filename = f"system_usage_export_{timestamp}.txt"
     with open(filename, "w") as f:
         f.write("\n".join(export_lines))
-    full_path = f"./{filename}"  # or use absolute path if needed
+    full_path = f"./{filename}"     # use absolute path if needed
     print(f"Exported to {full_path}")
 
 
-    # Show status text
+    # Show status text (text about exporting the data)
     status_text.set_text(f"Saved to {full_path}")
     plt.draw()
+
     # Function to clear the text
     def clear_status():
         status_text.set_text("")
         plt.draw()
     # Clear it after 3 seconds
-    threading.Timer(3.0, clear_status).start()
+    threading.Timer(3.0, clear_status).start()  # Makes it disappear in 3 seconds to make it fancier
+    
 
 def is_physical_partition(part):
     if not part.device or not part.device.startswith("/dev/"):
@@ -499,7 +539,6 @@ def on_device_select(device):
     # Update initial partition view
     on_partition_select(partitions[0], partition_buttons[0])
     plt.draw()
-
 
 
 def on_partition_select(partition, button):
@@ -810,10 +849,6 @@ def update_gpu_display(render):
 
     plt.draw()
 
-    
-   
-
-
 
 def hide_all():
     global device_buttons, partition_buttons, gpu_render, gpu_timer
@@ -831,13 +866,14 @@ def hide_all():
     theme_button_ax.set_visible(False)
     ThemeText.set_visible(False)
 
-    for btn in partition_buttons:
-        destroy_button(btn)
-    partition_buttons.clear()
-
-    for btn in device_buttons:
-        destroy_button(btn)
-    device_buttons.clear()
+    if partition_buttons != []:
+        for btn in partition_buttons:
+            destroy_button(btn)
+        partition_buttons.clear()
+    if device_buttons != []:
+        for btn in device_buttons:
+            destroy_button(btn)
+        device_buttons.clear()
 
     #Clear GPU screen
     for ax in gpu_axes:
@@ -914,8 +950,7 @@ if __name__ == "__main__":
     ax_panel.get_xaxis().set_visible(False)
     ax_panel.set_facecolor("#1e1e1e")
 
-    # Buttons
-    
+    # Buttons    
     ax_button1 = plt.axes([0, .95, .16, .05])
     ax_button2 = plt.axes([.161, .95, .16, .05])  
     ax_button3 = plt.axes([.322, .95, .16, .05])
@@ -948,10 +983,8 @@ if __name__ == "__main__":
     Screen4_button.on_clicked(Screen4)
     Screen5_button.on_clicked(Screen5)
     Settings_button.on_clicked(Settings)
-
     ThemeText = fig.text(.05,.8, "Theme: ")
     ThemeText.set_visible(False)
-
     
     toggle_theme(1, current_theme)
     Screen1_button.label.set_color("red")
@@ -962,15 +995,12 @@ if __name__ == "__main__":
     ax_processes.set_facecolor("#1e1e1e")
 
     
-   
-
     gpu_axes = []  # Global list to hold one axes per GPU
 
 
     ram_process.start()
     cpu_process.start()
     
-
     for i in range(gpu_count):  
         ax = fig.add_subplot(3, 1, i + 1)
         ax.set_facecolor("#1e1e1e")
