@@ -9,6 +9,7 @@ Usage:
   ./hwsmCLI -gpu    # GPU stats
   ./hwsmCLI -net    # Network stats (IP address, interface data)
   ./hwsmCLI -sys    # System info (OS, kernel, architecture)
+  ./hwsmCLI -bat    # Battery statistics
   ./hwsmCLI -all    # All above statistics
   ./hwsmCLI -help   # Show this help message
 If no parameters provided, shows help.
@@ -32,7 +33,8 @@ def print_help():
                  "  -gpu    Show GPU statistics\n"
                  "  -net    Show network statistics (IP address, interfaces)\n"
                  "  -sys    Show system information (OS, kernel, architecture)\n"
-                 "  -all    Show CPU, memory, disk, I/O, Net, GPU, system info\n"
+                 "  -bat    Show battery statistics\n"
+                 "  -all    Show CPU, memory, disk, I/O, Net, GPU, battery, system info\n"
                  "  -help   Show this help message\n")
     print("+---------------- Help ----------------+")
     print(help_text)
@@ -216,13 +218,44 @@ def print_sys():
     print(f"| Processor    : {uname.processor}")
     print("+------------------------------------------------+\n")
 
+def print_bat():
+    print("+----------------- Battery Info -----------------+")
+    batt = psutil.sensors_battery()
+    if not batt:
+        print("| No battery found.")
+    else:
+        status = "Charging" if batt.power_plugged else "Discharging"
+        print(f"| Percent: {batt.percent}%")
+        print(f"| Status : {status}")
+        if batt.secsleft not in (psutil.POWER_TIME_UNLIMITED, psutil.POWER_TIME_UNKNOWN):
+            hrs, rem = divmod(batt.secsleft, 3600)
+            mins, _ = divmod(rem, 60)
+            print(f"| Time Left: {hrs}h {mins}m")
+    print("+------------------------------------------------+")
+
 def main():
-    ops={'-cpu':print_cpu,'-mem':print_mem,'-disk':print_disk,'-io':print_io,
-         '-net':print_net,'-gpu':print_gpu,'-sys':print_sys,'-help':print_help}
-    if len(sys.argv)<2: print_help(); sys.exit()
-    cmd=sys.argv[1].lower()
-    if cmd=='-all': print_help(); [f() for _,f in ops.items() if _!='-help']; print_gpu(); print_sys()
-    elif cmd in ops: ops[cmd]()
-    else: print(f"Unknown option: {cmd}"); print_help()
+    ops = {
+        '-cpu': print_cpu,
+        '-mem': print_mem,
+        '-disk': print_disk,
+        '-io': print_io,
+        '-net': print_net,
+        '-gpu': print_gpu,
+        '-sys': print_sys,
+        '-bat': print_bat,
+        '-help': print_help
+    }
+    if len(sys.argv) < 2:
+        print_help()
+        sys.exit()
+    cmd = sys.argv[1].lower()
+    if cmd == '-all':
+        print_help()
+        [f() for _, f in ops.items() if _ not in ('-help',)]
+    elif cmd in ops:
+        ops[cmd]()
+    else:
+        print(f"Unknown option: {cmd}")
+        print_help()
 
 if __name__=='__main__': main()

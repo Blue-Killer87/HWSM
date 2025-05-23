@@ -23,5 +23,6 @@ Required dependencies:
   - threading
   - platform
   - datetime
-    
+
+To run this application, simply clone the repository and run the desired python script - either GUI or CLI version. If the script fails to load, you are likely missing the required dependencies or some core files. 
     
