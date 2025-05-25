@@ -1,6 +1,7 @@
 **HWSM**
 <br>
-**This is the main directory containing the program with all it's dependencies.**
+**This is the main directory containing the program.**
+*HWSM consists of two versions. GUI version and CLI version. They are completely independent and can be used on their own.*
 <p>&nbsp;</p>
 
 *NOTE*

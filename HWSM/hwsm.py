@@ -627,7 +627,7 @@ def update_disk_display(ax, ax_stats, partition):
     display_disk_stats(ax_stats, partition)
     plt.draw()
 
-
+# Function to gather gpu info on Windows (uses wmic)
 def get_windows_gpus():
     gpus = []
     try:
@@ -641,6 +641,7 @@ def get_windows_gpus():
         print(f"Error detecting GPUs on Windows: {e}")
     return gpus
 
+# Function to gather gpu info on Linux (with labels, uses lshw)
 def get_linux_gpus_labeled():
     gpus = []
     try:
@@ -666,7 +667,7 @@ def get_linux_gpus_labeled():
         print(f"Error detecting GPUs on Linux: {e}")
     return gpus
 
-
+# Specific function to find detailed info on NVIDIA gpus
 def get_nvidia_gpu_stats():
     gpus = []
     try:
@@ -683,7 +684,7 @@ def get_nvidia_gpu_stats():
         print(f"Error fetching NVIDIA GPU stats: {e}")
     return gpus
 
-
+# Specific function to find detailed info on Intel gpus (currently not working, not sure how to do this)
 def get_intel_gpu_usage():
     pass
     ''' proc = subprocess.Popen(
@@ -706,27 +707,29 @@ def get_intel_gpu_usage():
     proc.terminate()
     return json_data'''
 
-
-
-
+# Specific function to find detailed info on AMD gpus (uses rocm-smi)
 def get_amd_gpu_stats():
     gpus = []
     try:
+        # Default values
         load = 0.0
         memory_used = 0.0
         memory_total = 0.0
         temperature = 0.0
 
         try:
+            # Try getting info
             rocm_output = subprocess.check_output(["rocm-smi", "--showuse", "--showtemp", "--showmemuse"]).decode()
 
             # Example parsing logic (will vary by rocm-smi version)
             load_match = re.search(r'GPU\s+\d+\s+:\s+(\d+)%', rocm_output)
             load = float(load_match.group(1)) if load_match else 0.0
 
+            # Match and extract temperature
             temp_match = re.search(r'Temperature.*?:\s+(\d+)\.\d+C', rocm_output)
             temperature = float(temp_match.group(1)) if temp_match else 0.0
 
+            # Match and extract memory info
             mem_match = re.search(r'Memory Used.*?:\s+(\d+)\s+MiB\s*/\s*(\d+)\s+MiB', rocm_output)
             if mem_match:
                 memory_used = float(mem_match.group(1))
@@ -738,6 +741,7 @@ def get_amd_gpu_stats():
             temp_match = re.search(r"edge:\s+\+?([\d.]+)°C", sensors_output)
             temperature = float(temp_match.group(1)) if temp_match else 0.0
 
+        # Append information into gpus
         gpus.append({
             'name': 'AMD Radeon GPU',
             'load': load,
@@ -749,11 +753,12 @@ def get_amd_gpu_stats():
         print(f"[AMD] Error fetching GPU stats: {e}")
     return gpus
 
+# Helping function to gather data together (for iteration)
 def get_gpu_info():
     gpus = []
 
     # NVIDIA
-    nvidia_gpus = get_nvidia_gpu_stats()
+    nvidia_gpus = get_nvidia_gpu_stats() 
     gpus.extend(nvidia_gpus)
 
     # Discover available devices
@@ -786,6 +791,9 @@ def get_gpu_info():
 
     return gpus
 
+
+# Asynchronous function to keep updating the GPU info without freezing the app
+# uses ProcessPoolExecutor
 def async_update_gpu():
         future = executor.submit(get_gpu_info)
         def callback(f):
@@ -793,12 +801,12 @@ def async_update_gpu():
             update_gpu_display(gpus)
         future.add_done_callback(callback)
 
-
-
+# Main GPU function to update the info (+ charts)
 def update_gpu_display(gpus):
-    gpus = get_gpu_info()
+    gpus = get_gpu_info() # Get info
     #print("Detected GPUs:", gpus) #For debug
     
+    # Clear old graphs
     try:
         for ax in gpu_axes:
             ax.set_visible(False)
@@ -810,28 +818,30 @@ def update_gpu_display(gpus):
         ax.clear()
         ax.set_visible(False)
 
+    # If no GPUS are detected
     if not gpus:
         gpu_axes[0].text(0.5, 0.5, "No GPU detected", ha='center', va='center', color="white", fontsize=14)
         gpu_axes[0].set_visible(True)
         plt.draw()
         return
 
+    # Creating graph for every detected GPU
     for i, gpu in enumerate(gpus):
         if i >= len(gpu_axes):
             break  # Don't exceed available axes
-        if current_screen == 'Screen4':
+        if current_screen == 'Screen4':     # Make sure  we are in the correct screen before rendering
             ax = gpu_axes[i]
             
             ax.set_visible(True)
             ax.set_facecolor("#1e1e1e")
 
+        # Intel falllback, since the intel functions are not currently implemented
         if gpu['name'] == "Intel GPU":
             #print('INTEL')
             ax.set_title('Intel GPU')
             ax.text(1, 50, "Intel currently not supported", ha='center', va='center', color="white", fontsize=14)
 
-        # Gather data
-        
+        # Gather data for specific GPU
         values = [
             gpu['load'] if gpu['load'] is not None else 0,
             gpu['temperature'] if gpu['temperature'] is not None else 0,
@@ -854,6 +864,7 @@ def update_gpu_display(gpus):
             ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 2,
                     f"{val:.1f}", ha='center', va='bottom', color="white", fontsize=8)
 
+        # Matplotlib settings and declarations (for the graphs)
         ax.set_ylim(0, 110)
         ax.set_title(gpu['name'], color="white", fontsize=10)
         ax.tick_params(axis='x', colors='white')
@@ -869,7 +880,8 @@ def update_gpu_display(gpus):
 
     
 
-
+# Function to hide all elements. This servers as a main block for the screen switching mechanics
+# Basically switches off every argument that we switch on/off in the app
 def hide_all():
     global device_buttons, partition_buttons, gpu_render, gpu_timer
 
@@ -886,6 +898,7 @@ def hide_all():
     theme_button_ax.set_visible(False)
     ThemeText.set_visible(False)
 
+    # Clearing the disk buttons
     if partition_buttons != []:
         for btn in partition_buttons:
             destroy_button(btn)
@@ -1021,25 +1034,28 @@ if __name__ == "__main__":
     ram_process.start()
     cpu_process.start()
     
+    # Create gpu graphs (default is 3, if there are less, the gpu function delete the unused ones)
     for i in range(gpu_count):  
         ax = fig.add_subplot(3, 1, i + 1)
         ax.set_facecolor("#1e1e1e")
         ax.set_visible(False)
         gpu_axes.append(ax)
 
-
+    # Next screen function for process screen
     def next_page(event):
         global start_index
         if start_index + displayed_rows < len(proc_list):
             start_index += displayed_rows
             update_display()
 
+    # Previous screen function for process screen
     def prev_page(event):
         global start_index
         if start_index - displayed_rows >= 0:
             start_index -= displayed_rows
             update_display()
 
+    # The main updater for the process screen
     def update_display():
         global text_objects, kill_buttons
 
@@ -1091,6 +1107,7 @@ if __name__ == "__main__":
     btn_next.on_clicked(next_page)
     btn_prev.on_clicked(prev_page)
 
+    # Scrolling feature for process screen
     def on_key(event):
         global start_index
         if event.key == 'down':
@@ -1102,12 +1119,14 @@ if __name__ == "__main__":
                 start_index -= 1
                 update_display()
 
+    # button cleanup
     def destroy_button(btn):
         if hasattr(btn, 'disconnect_events'):
             btn.disconnect_events()
         if btn.ax in fig.axes:
             btn.ax.remove()
 
+    # Process kill function
     def kill_process(pid):
         try:
             p = psutil.Process(pid)
@@ -1118,6 +1137,7 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"Failed to terminate process {pid}: {e}")
 
+    # Process screen cleanup
     def hide_process_elements():
         global text_objects, kill_buttons
         for txt in text_objects:
@@ -1130,6 +1150,7 @@ if __name__ == "__main__":
         ax_next_button.set_visible(False)
         ax_prev_button.set_visible(False)
 
+    # disk buttons cleanup
     def hide_partition_buttons():
         global partition_buttons
         for i in partition_buttons:
