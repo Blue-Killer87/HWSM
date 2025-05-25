@@ -22,6 +22,8 @@ import shutil
 import re
 import socket
 import os
+import cpuinfo
+
 
 def print_help():
     help_text = ("Usage: ./hwsmCLI [option]\n"
@@ -35,8 +37,8 @@ def print_help():
                  "  -sys    Show system information (OS, kernel, architecture)\n"
                  "  -bat    Show battery statistics\n"
                  "  -all    Show CPU, memory, disk, I/O, Net, GPU, battery, system info\n"
-                 "  -help   Show this help message\n")
-    print("+---------------- Help ----------------+")
+                 "  -help   Show this help message")
+    print("\n+---------------- Help ----------------+")
     print(help_text)
     print("+-------------------------------------+\n")
 
@@ -49,24 +51,25 @@ def get_size(num_bytes, suffix="B"):
     return f"{num_bytes:.2f}Y{suffix}"
 
 def print_cpu():
-    proc = platform.processor() or platform.uname().processor
-    print("+--------------- CPU Info ---------------+")
+    proc = cpuinfo.get_cpu_info()["brand_raw"]
+    print("\n+--------------- CPU Info ---------------+")
     print(f"| Vendor/Model   : {proc}")
     print(f"| Physical cores : {psutil.cpu_count(logical=False)}")
     print(f"| Total cores    : {psutil.cpu_count(logical=True)}")
     usage = psutil.cpu_percent(percpu=True, interval=1)
     print("| Usage per core:")
-    for i, u in enumerate(usage): print(f"|   Core {i:<2}: {u}%")
-    print(f"| Total usage    : {psutil.cpu_percent()}%")
+    for i, u in enumerate(usage): print(f"|   Core {i+1:<2}: {u}%")
+    print(f"| Total usage : {psutil.cpu_percent()}%")
     print("+----------------------------------------+\n")
 
 def print_mem():
     vm = psutil.virtual_memory(); sm = psutil.swap_memory()
-    print("+--------------- Memory Info ------------+")
+    print("\n+--------------- Memory Info ------------+")
     print(f"| Total Memory     : {get_size(vm.total)}")
     print(f"| Used Memory      : {get_size(vm.used)}")
-    print(f"| Available Memory : {get_size(vm.available)}")
+    print(f"| Free Memory      : {get_size(vm.available)}")
     print(f"| Usage            : {vm.percent}%")
+    print(f"+----------------------------------------+")
     print(f"| Total Swap       : {get_size(sm.total)}")
     print(f"| Used Swap        : {get_size(sm.used)}")
     print(f"| Free Swap        : {get_size(sm.free)}")
@@ -74,7 +77,7 @@ def print_mem():
     print("+----------------------------------------+\n")
 
 def print_disk():
-    print("+---------------- Disk Info ----------------+")
+    print("\n+---------------- Disk Info ----------------+")
     partitions = psutil.disk_partitions()
     for p in partitions:
         print(f"| Device: {p.device}")
@@ -93,7 +96,7 @@ def print_disk():
 
 def print_io():
     io = psutil.disk_io_counters(perdisk=True)
-    print("+----------------- Disk I/O -----------------+")
+    print("\n+----------------- Disk I/O -----------------+")
     for disk, stats in io.items():
         print(f"| Disk: {disk}")
         print(f"|   Read Count     : {stats.read_count}")
@@ -106,7 +109,7 @@ def print_io():
     print("+-------------------------------------------+\n")
 
 def print_net():
-    print("+----------------- Network Info -----------------+")
+    print("\n+----------------- Network Info -----------------+")
     hostname = socket.gethostname()
     try:
         ip = socket.gethostbyname(hostname)
@@ -184,7 +187,7 @@ def parse_lshw_output():
     return hw
 
 def print_gpu():
-    print("+----------------- GPU Info -----------------+")
+    print("\n+----------------- GPU Info -----------------+")
     nv=get_nvidia_info(); hw=parse_lshw_output(); intel_info = get_intel_gpu_info()
     buses={g['Bus'] for g in nv}
     for h in hw:
@@ -208,30 +211,30 @@ def print_gpu():
     print("+-------------------------------------------+\n")
 
 def print_sys():
-    print("+----------------- System Info -----------------+")
+    print("\n+----------------- System Info -----------------+")
     uname = platform.uname()
     print(f"| System       : {uname.system}")
     print(f"| Node Name    : {uname.node}")
     print(f"| Release      : {uname.release}")
     print(f"| Version      : {uname.version}")
     print(f"| Machine      : {uname.machine}")
-    print(f"| Processor    : {uname.processor}")
+    print(f"| Processor    : {cpuinfo.get_cpu_info()["brand_raw"]}")
     print("+------------------------------------------------+\n")
 
 def print_bat():
-    print("+----------------- Battery Info -----------------+")
+    print("\n+----------------- Battery Info -----------------+")
     batt = psutil.sensors_battery()
     if not batt:
         print("| No battery found.")
     else:
         status = "Charging" if batt.power_plugged else "Discharging"
-        print(f"| Percent: {batt.percent}%")
+        print(f"| Percent: {round(batt.percent, 2)}%")
         print(f"| Status : {status}")
         if batt.secsleft not in (psutil.POWER_TIME_UNLIMITED, psutil.POWER_TIME_UNKNOWN):
             hrs, rem = divmod(batt.secsleft, 3600)
             mins, _ = divmod(rem, 60)
             print(f"| Time Left: {hrs}h {mins}m")
-    print("+------------------------------------------------+")
+    print("+------------------------------------------------+\n")
 
 def main():
     ops = {

@@ -1,4 +1,4 @@
-#!/bin/python3
+#!/usr/bin/env python3
 
 # Disclaimer:
 # All comments, variables, function names, etc. are in english. This is mostly for the function of universality and global access for anyone outside of Czechia. 
@@ -23,8 +23,11 @@ import subprocess
 import re
 import json
 import platform
+from concurrent.futures import ProcessPoolExecutor
+
 
 system = platform.system() 
+executor = ProcessPoolExecutor(max_workers=1)
 
 
 
@@ -237,7 +240,8 @@ def Screen4(event):
     gpu_render = True
 
     def update_loop():
-        update_gpu_display(gpu_render)
+        if gpu_render:
+            async_update_gpu()
 
     # Stop any existing timer first
     if gpu_timer is not None:
@@ -249,7 +253,6 @@ def Screen4(event):
 
     update_gpu_display(gpu_render)
 
-    
 
 # Statistics Screen (Shows collected RAM and CPU data since the app launch, probably will add features in the future)
 def Screen5(event):
@@ -600,6 +603,7 @@ def plot_disk_usage(ax, partition):
     sizes = [usage.used, usage.free]
     ax.clear()
     ax.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90, colors=['red', 'green'])
+    ax.set_position([.55,.3,.4,.4])
     ax.axis('equal')  # Equal aspect ratio ensures pie chart is circular
 
 # Display disk stats under pie chart
@@ -614,7 +618,7 @@ def display_disk_stats(ax_stats, partition):
         f"Disk Type: {partition.device}"
     ]
     for i, stat in enumerate(stats):
-        ax_stats.text(0.05, 1 - i * 0.2, stat, transform=ax_stats.transAxes, fontsize=12, color="white")
+        ax_stats.text(0.05, 1.3 - i * 0.2, stat, transform=ax_stats.transAxes, fontsize=12, color="white")
     ax_stats.set_axis_off()
 
 # Function to update the disk stats and pie chart when a disk is selected
@@ -637,18 +641,27 @@ def get_windows_gpus():
         print(f"Error detecting GPUs on Windows: {e}")
     return gpus
 
-def get_linux_gpus():
+def get_linux_gpus_labeled():
     gpus = []
     try:
-        output = subprocess.check_output(["lshw", "-C", "display"], universal_newlines=True)
+        output = subprocess.check_output(["lshw", "-C", "display"], universal_newlines=True, stderr=subprocess.DEVNULL)
         entries = output.split("*-display")
         for entry in entries:
             if "product:" in entry:
                 lines = entry.splitlines()
                 name_line = next((line for line in lines if "product:" in line), None)
-                if name_line:
+                vendor_line = next((line for line in lines if "vendor:" in line), None)
+                if name_line and vendor_line:
                     gpu_name = name_line.split("product:")[1].strip()
-                    gpus.append({'name': gpu_name, 'load': None, 'memory_used': None, 'memory_total': None, 'temperature': None})
+                    vendor = vendor_line.split("vendor:")[1].strip().lower()
+                    gpus.append({
+                        'name': gpu_name,
+                        'vendor': vendor,
+                        'load': None,
+                        'memory_used': None,
+                        'memory_total': None,
+                        'temperature': None
+                    })
     except Exception as e:
         print(f"Error detecting GPUs on Linux: {e}")
     return gpus
@@ -670,54 +683,30 @@ def get_nvidia_gpu_stats():
         print(f"Error fetching NVIDIA GPU stats: {e}")
     return gpus
 
+
 def get_intel_gpu_usage():
-    try:
-        proc = subprocess.Popen(
-            ['sudo', 'intel_gpu_top', '-J', '-s', '1000'],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            text=True
-        )
+    pass
+    ''' proc = subprocess.Popen(
+    ["intel_gpu_top", "-J"],
+    stdout=subprocess.PIPE,
+    stderr=subprocess.PIPE,
+    bufsize=1,
+    universal_newlines=True
+)
 
-        time.sleep(1.0)
-
-        proc.terminate()
+    for line in proc.stdout:
         try:
-            proc.wait(timeout=1)
-        except subprocess.TimeoutExpired:
-            proc.kill()
+            data = json.loads(line)
+            # Extract GPU usage, e.g. data["engines"]["Render/3D"]["busy"]
+            print("Render busy:", data.get("engines", {}).get("Render/3D", {}).get("busy"))
+        except json.JSONDecodeError as e:
+            print("Decode error:", e)
+            print("Line:", line)
 
-        output = proc.stdout.read()
-        if not output.strip():
-            print("[Intel GPU] No output captured.")
-            return {}
+    proc.terminate()
+    return json_data'''
 
-        # Try to find the first valid JSON line
-        for line in output.splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                data = json.loads(line)
-                break  # success
-            except json.JSONDecodeError:
-                continue
-        else:
-            print("[Intel GPU Error] No valid JSON found in output.")
-            return {}
 
-        usage = {}
-        for engine in data.get("engines", []):
-            name = engine.get("engine", "unknown")
-            busy = engine.get("busy", 0.0)
-            usage[name] = busy
-        print("RAW OUTPUT:\n", output)
-
-        return usage
-
-    except Exception as e:
-        print(f"[Intel GPU Error] {e}")
-        return {}
 
 
 def get_amd_gpu_stats():
@@ -763,25 +752,50 @@ def get_amd_gpu_stats():
 def get_gpu_info():
     gpus = []
 
-    # Fetch vendor-specific GPU stats
-    gpus += get_nvidia_gpu_stats()
-    
-    intel_stats = get_intel_gpu_usage()
-    print(get_intel_gpu_usage())
-    if intel_stats:
+    # NVIDIA
+    nvidia_gpus = get_nvidia_gpu_stats()
+    gpus.extend(nvidia_gpus)
+
+    # Discover available devices
+    linux_gpus = get_linux_gpus_labeled()
+    has_intel = any("intel" in g['vendor'] for g in linux_gpus)
+    has_amd = any("amd" in g['vendor'] for g in linux_gpus)
+
+    if has_intel:
+        #intel_stats = get_intel_gpu_usage()
         gpus.append({
             'name': 'Intel GPU',
-            'load': sum(intel_stats.values()) / len(intel_stats) if intel_stats else 0,
-            'memory_used': None,
-            'memory_total': None,
-            'temperature': None
+            'load': 0,
+            'memory_used': 0,
+            'memory_total': 0,
+            'temperature': 0
         })
 
-    gpus += get_amd_gpu_stats()
+        # Not working
+        '''if intel_stats:
+            gpus.append({
+                'name': 'Intel GPU',
+                'load': sum(intel_stats.values()) / len(intel_stats) if intel_stats else 0,
+                'memory_used': None,
+                'memory_total': None,
+                'temperature': None
+            })'''
+
+    if has_amd:
+        gpus += get_amd_gpu_stats()
 
     return gpus
 
-def update_gpu_display(render):
+def async_update_gpu():
+        future = executor.submit(get_gpu_info)
+        def callback(f):
+            gpus = f.result()
+            update_gpu_display(gpus)
+        future.add_done_callback(callback)
+
+
+
+def update_gpu_display(gpus):
     gpus = get_gpu_info()
     #print("Detected GPUs:", gpus) #For debug
     
@@ -798,19 +812,23 @@ def update_gpu_display(render):
 
     if not gpus:
         gpu_axes[0].text(0.5, 0.5, "No GPU detected", ha='center', va='center', color="white", fontsize=14)
-        if render == True:
-            gpu_axes[0].set_visible(True)
+        gpu_axes[0].set_visible(True)
         plt.draw()
         return
 
     for i, gpu in enumerate(gpus):
         if i >= len(gpu_axes):
             break  # Don't exceed available axes
-
-        ax = gpu_axes[i]
-        if render == True:
+        if current_screen == 'Screen4':
+            ax = gpu_axes[i]
+            
             ax.set_visible(True)
-        ax.set_facecolor("#1e1e1e")
+            ax.set_facecolor("#1e1e1e")
+
+        if gpu['name'] == "Intel GPU":
+            #print('INTEL')
+            ax.set_title('Intel GPU')
+            ax.text(1, 50, "Intel currently not supported", ha='center', va='center', color="white", fontsize=14)
 
         # Gather data
         
@@ -848,6 +866,8 @@ def update_gpu_display(render):
         ax.xaxis.label.set_color("white")
 
     plt.draw()
+
+    
 
 
 def hide_all():
